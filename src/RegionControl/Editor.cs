@@ -229,8 +229,15 @@ public class EditorForm : Form
             new() { Id = "savecopy", Glyph = "copy", Text = "Save copy" },
             new() { Id = "delete", Glyph = "delete", Text = _deleteArmedUntil != default ? "Click again to delete" : "Delete", Enabled = _lib.Find(_m.LayoutId) != null },
             new() { Kind = Kind.Sep },
-            new() { Text = "Show on", Kind = Kind.Label },
         };
+        if (_lib.Find(_m.LayoutId) != null)
+        {
+            bool inStrip = _lib.IsShown(_m.LayoutId!, _mon.Key);
+            list.Add(new Item { Id = "earlier", Text = "Earlier", Enabled = inStrip });
+            list.Add(new Item { Id = "later", Text = "Later", Enabled = inStrip });
+            list.Add(new Item { Kind = Kind.Sep });
+        }
+        list.Add(new Item { Text = "Show on", Kind = Kind.Label });
         foreach (var mon in _monitors)
             list.Add(new Item { Id = "mon:" + mon.Key, Glyph = "monitor", Text = mon.Key == _mon.Key ? $"{mon.Number} here" : $"{mon.Number}", On = _showOn.Contains(mon.Key) });
         list.Add(new Item { Id = "main", Glyph = _main ? "star" : "star-outline", Text = "Main", On = _main });
@@ -324,6 +331,8 @@ public class EditorForm : Form
         "save" => "Save this layout (overwrites the opened one).  Ctrl+S",
         "savecopy" => "Save as a new layout and keep the original.  Ctrl+Shift+S",
         "delete" => "Delete the opened layout from the library. Click twice.",
+        "earlier" => "Move earlier in this monitor's picker.",
+        "later" => "Move later in this monitor's picker.",
         "main" => "Main: first in this monitor's picker for this monitor setup (the set).",
         "close" => "Close the editor.  Esc",
         _ when id.StartsWith("mon:") => "Show this layout in that monitor's picker. Applies on Save.",
@@ -355,6 +364,8 @@ public class EditorForm : Form
             case "save": Save(false); break;
             case "savecopy": Save(true); break;
             case "delete": DeleteLayout(); break;
+            case "earlier": MoveInStrip(-1); break;
+            case "later": MoveInStrip(1); break;
             case "main":
                 _main = !_main;
                 if (_main) _showOn.Add(_mon.Key);
@@ -462,6 +473,27 @@ public class EditorForm : Form
         if (on.Count == 0) Warn($"Saved \"{layout.Name}\", but it shows on no monitor. Turn on a monitor under Show on, then save again.", 5);
         else Toast($"Saved \"{layout.Name}\" ({layout.Zones.Count} zones). In the picker on monitor {string.Join(", ", on)}{(_main ? ", as main" : "")}.", 5);
         DragWatcher.Log($"editor saved \"{layout.Name}\" ({layout.Id}), {layout.Zones.Count} zones, shown on monitor {string.Join(", ", on)}{(_main ? ", main" : "")}");
+    }
+
+    void MoveInStrip(int delta)
+    {
+        var layout = _lib.Find(_m.LayoutId);
+        if (layout == null) { Warn("Open a saved layout first."); return; }
+        if (_lib.MainFor(_setKey, _mon.Key) == layout.Id) { Toast($"\"{layout.Name}\" is the main layout, so it stays first."); return; }
+        var r = _lib.MoveInStrip(layout.Id, _mon.Key, delta, _setKey);
+        switch (r)
+        {
+            case StripMove.NotInStrip: Warn("This layout is not in this monitor's picker. Turn on this monitor under Show on, and save."); return;
+            case StripMove.BehindMain: Toast("The main layout stays first, so this layout cannot go earlier."); return;
+            case StripMove.AtEdge: Toast(delta < 0 ? "Already first in the picker." : "Already last in the picker."); return;
+        }
+        try { _lib.Save(); }
+        catch (Exception ex) { Warn("Could not save the layouts file: " + ex.Message, 8); return; }
+        int pos = _lib.StripFor(_mon.Key, _setKey).FindIndex(l => l.Id == layout.Id) + 1;
+        Toast(r == StripMove.BehindMainNow
+            ? $"Moved \"{layout.Name}\" to position {pos}. The main layout stays first."
+            : $"Moved \"{layout.Name}\" to position {pos}.");
+        DragWatcher.Log($"editor moved \"{layout.Name}\" ({layout.Id}) to strip position {pos}");
     }
 
     void DeleteLayout()

@@ -311,6 +311,35 @@ public static class SelfTest
         Check(lib.MainFor(kDesk, dellB.Key) == null, "main can be cleared");
         Check(lib.StripFor(dellB.Key, kDesk).Count > 0, "strip still has layouts after clearing main");
 
+        // Strip order: MoveInStrip. Laptop strip on the desk set is c1 (main), then the seeds.
+        var stripAtStart = lib.Monitor(laptop.Key)!.Layouts.ToList();
+        string[] Ids() => lib.StripFor(laptop.Key, kDesk).Select(x => x.Id).ToArray();
+        Eq(Ids()[0], "c1", "strip order: main first before any move");
+        Eq(lib.MoveInStrip("seed-floating-30", laptop.Key, -1, kDesk), StripMove.Moved, "move earlier works");
+        Eq(string.Join(",", Ids()), "c1,seed-70-30,seed-floating-30,seed-25-50-25", "move earlier swaps with the layout before");
+        Eq(lib.MoveInStrip("seed-floating-30", laptop.Key, 1, kDesk), StripMove.Moved, "move later works");
+        Eq(string.Join(",", Ids()), "c1,seed-70-30,seed-25-50-25,seed-floating-30", "move later restores the order");
+        Eq(lib.MoveInStrip("seed-floating-30", laptop.Key, 1, kDesk), StripMove.AtEdge, "last layout cannot move later");
+        Eq(string.Join(",", Ids()), "c1,seed-70-30,seed-25-50-25,seed-floating-30", "order unchanged at the last edge");
+        Eq(lib.MoveInStrip("seed-70-30", laptop.Key, -1, kDesk), StripMove.BehindMain, "layout behind main cannot pass it");
+        Eq(Ids()[0], "c1", "main stays first");
+        Eq(lib.MoveInStrip("c1", laptop.Key, 1, kDesk), StripMove.AtEdge, "main layout does not move");
+        Eq(Ids()[0], "c1", "main still first after a move try");
+        Eq(lib.MoveInStrip("seed-25-50-25", laptop.Key, -1, kDesk), StripMove.BehindMainNow, "move to just behind main is reported");
+        Eq(lib.MoveInStrip("seed-25-50-25", laptop.Key, -5, kDesk), StripMove.BehindMain, "a big step stops behind main");
+        Eq(lib.MoveInStrip("seed-70-30", laptop.Key, 9, kDesk), StripMove.Moved, "a big step later clamps to the end");
+        Eq(Ids()[^1], "seed-70-30", "big step later lands last");
+        Eq(lib.MoveInStrip("nope", laptop.Key, 1, kDesk), StripMove.NotInStrip, "id not in the strip");
+        lib.SetShown("c1", dellB.Key, false);
+        Eq(lib.MoveInStrip("c1", dellB.Key, 1, kDesk), StripMove.NotInStrip, "layout not on that monitor's strip");
+        Eq(lib.MoveInStrip("seed-70-30", "no-such-monitor", 1, kDesk), StripMove.NotInStrip, "unknown monitor key");
+        Eq(lib.MoveInStrip("seed-25-50-25", laptop.Key, 0, kDesk), StripMove.AtEdge, "delta 0 moves nothing");
+        // Without a set, the raw list order applies (no pinned layout).
+        var rawBefore = lib.Monitor(laptop.Key)!.Layouts.ToList();
+        Eq(lib.MoveInStrip(rawBefore[1], laptop.Key, -1), StripMove.Moved, "no set: plain move");
+        Eq(lib.Monitor(laptop.Key)!.Layouts[0], rawBefore[1], "no set: layout moved to the front of the list");
+        lib.Monitor(laptop.Key)!.Layouts = stripAtStart; // restore the order the later checks expect
+
         // Ultrawide at the desk instead: a new setup; a new monitor gets the seeds.
         var uw = new List<MonitorInfo> { laptop, ultra };
         Monitors.Number(uw);

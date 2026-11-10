@@ -110,6 +110,19 @@ public class MonitorEntry
     public List<string> Layouts { get; set; } = new();
 }
 
+/// <summary>Result of Library.MoveInStrip.</summary>
+public enum StripMove
+{
+    Moved,
+    /// <summary>Moved, and now sits right behind the pinned main layout.</summary>
+    BehindMainNow,
+    /// <summary>No move: already first or last (or the layout is the main one).</summary>
+    AtEdge,
+    /// <summary>No move: only the pinned main layout is earlier.</summary>
+    BehindMain,
+    NotInStrip,
+}
+
 /// <summary>A set: one main layout per monitor, for one monitor setup.</summary>
 public class LayoutSet
 {
@@ -332,6 +345,29 @@ public class Library
         }
         if (on && !e.Layouts.Contains(layoutId)) e.Layouts.Add(layoutId);
         if (!on) e.Layouts.Remove(layoutId);
+    }
+
+    /// <summary>
+    /// Move a layout earlier (delta below 0) or later (above 0) in a monitor's strip order.
+    /// With a setup key, the set's main layout stays pinned first and cannot be passed.
+    /// A move saves the new order into the strip list (main first). Call Save after it.
+    /// </summary>
+    public StripMove MoveInStrip(string layoutId, string monitorKey, int delta, string? setupKey = null)
+    {
+        var e = Monitor(monitorKey);
+        if (e == null || !e.Layouts.Contains(layoutId)) return StripMove.NotInStrip;
+        var order = e.Layouts.ToList();
+        string? main = setupKey == null ? null : MainFor(setupKey, monitorKey);
+        if (main != null && order.Remove(main)) order.Insert(0, main);
+        int from = order.IndexOf(layoutId);
+        if (layoutId == main || delta == 0) return StripMove.AtEdge;
+        int floor = main != null && order.Contains(main) ? 1 : 0;
+        int to = Math.Clamp(from + delta, floor, order.Count - 1);
+        if (to == from) return delta < 0 && from == floor && floor == 1 ? StripMove.BehindMain : StripMove.AtEdge;
+        order.RemoveAt(from);
+        order.Insert(to, layoutId);
+        e.Layouts = order;
+        return delta < 0 && to == floor && floor == 1 ? StripMove.BehindMainNow : StripMove.Moved;
     }
 
     /// <summary>Set or clear the main layout of a monitor in a set. Setting it also shows it in the strip.</summary>
