@@ -411,11 +411,35 @@ public class EditorForm : Form
 
     // Drag a card in the Open panel to set the picker order of this monitor.
 
-    /// <summary>The cell index a drop at p would use, or -1. Only strip cards are targets.</summary>
-    int CardTargetAt(Point p)
+    /// <summary>
+    /// The slot a drop at p would use: insert before cell s (1.._openStrip), or s = _openStrip + 1 for after the last strip card.
+    /// Picks the nearest strip card (gaps and the panel edges count), and the side from the cursor. -1 outside the panel.
+    /// </summary>
+    int CardSlotAt(Point p)
     {
-        int i = _openCells.FindIndex(o => o.cell.Contains(p));
-        return i >= 1 && i <= _openStrip ? i : -1;
+        if (_openStrip < 1 || !Rectangle.Inflate(_panel, S(40), S(40)).Contains(p)) return -1;
+        int best = -1; double bestD = double.MaxValue;
+        for (int i = 1; i <= _openStrip && i < _openCells.Count; i++)
+        {
+            var c = _openCells[i].cell;
+            // The label under a card counts as part of it.
+            var box = new Rectangle(c.X, c.Y, c.Width, c.Height + S(26));
+            double dx = Math.Max(0, Math.Max(box.Left - p.X, p.X - box.Right));
+            double dy = Math.Max(0, Math.Max(box.Top - p.Y, p.Y - box.Bottom));
+            double d = dx * dx + 4 * dy * dy; // a row is much farther than a neighbour in the same row
+            if (d < bestD) { bestD = d; best = i; }
+        }
+        if (best < 0) return -1;
+        var bc = _openCells[best].cell;
+        return p.X < bc.X + bc.Width / 2 ? best : best + 1;
+    }
+
+    /// <summary>Final cell position of the dragged card for a slot, or -1 when it would not move.</summary>
+    int CardFinal(int down, int slot)
+    {
+        if (slot < 0) return -1;
+        int f = down >= 1 && down <= _openStrip && down < slot ? slot - 1 : slot;
+        return f == down ? -1 : f;
     }
 
     void OpenCardMove(Point p)
@@ -429,8 +453,8 @@ public class EditorForm : Form
         }
         if (_cardDragging)
         {
-            _cardTarget = CardTargetAt(p);
-            if (_cardTarget == _cardDown) _cardTarget = -1; // over its own slot: nothing to do
+            _cardTarget = CardSlotAt(p);
+            if (CardFinal(_cardDown, _cardTarget) < 0) _cardTarget = -1; // lands in its own place: nothing to do
             if (Cursor != Cursors.SizeAll) Cursor = Cursors.SizeAll;
         }
         Invalidate();
@@ -450,9 +474,10 @@ public class EditorForm : Form
             else Invalidate();
             return;
         }
-        if (layout == null || target < 0) { Invalidate(); return; }
+        int final = layout == null ? -1 : CardFinal(down, target);
+        if (layout == null || final < 0) { Invalidate(); return; }
         // Cell 0 is Blank, so strip index = cell index - 1.
-        var r = _lib.ReorderStrip(layout.Id, _mon.Key, target - 1, _setKey, out bool blocked);
+        var r = _lib.ReorderStrip(layout.Id, _mon.Key, final - 1, _setKey, out bool blocked);
         if (r is StripMove.Unchanged or StripMove.PinnedMain or StripMove.NotFound)
         {
             Toast(r == StripMove.PinnedMain ? $"\"{layout.Name}\" is the main layout, so it stays first."
@@ -1529,11 +1554,12 @@ public class EditorForm : Form
         {
             if (_cardTarget >= 0)
             {
-                // Drop marker: a bar on the side of the target card the dragged card would land on.
-                var t = _openCells[_cardTarget].cell;
-                bool before = _cardDown > _openStrip || _cardTarget < _cardDown;
-                if (_cardTarget == 1 && _lib.MainFor(_setKey, _mon.Key) == _openCells[1].layout?.Id) before = false;
-                int bx = before ? t.X - S(9) : t.Right + S(6);
+                // Drop marker: a bar at the slot the dragged card would land in.
+                int slot = _cardTarget;
+                if (slot == 1 && _lib.MainFor(_setKey, _mon.Key) == _openCells[1].layout?.Id) slot = 2; // main stays first
+                slot = Math.Min(slot, _openStrip + 1);
+                Rectangle t = slot <= _openStrip ? _openCells[slot].cell : _openCells[_openStrip].cell;
+                int bx = slot <= _openStrip ? t.X - S(9) : t.Right + S(6);
                 var bar = new RectangleF(bx, t.Y - S(4), S(4), t.Height + S(8));
                 using var path = Theme.Round(bar, bar.Width / 2f);
                 using var fill = new SolidBrush(Theme.Accent);
