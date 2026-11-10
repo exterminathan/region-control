@@ -73,6 +73,14 @@ public struct DISPLAYCONFIG_TARGET_DEVICE_NAME
     [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 128)] public string monitorDevicePath;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+public struct WINDOWPLACEMENT
+{
+    public int length, flags, showCmd;
+    public POINT ptMinPosition, ptMaxPosition;
+    public RECT rcNormalPosition;
+}
+
 public static class Native
 {
     public delegate void WinEventProc(IntPtr hook, uint evt, IntPtr hwnd, int idObject, int idChild, uint thread, uint time);
@@ -155,6 +163,24 @@ public static class Native
 
     [DllImport("user32.dll")]
     public static extern bool IsZoomed(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsIconic(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsHungAppWindow(IntPtr hwnd);
+
+    [DllImport("user32.dll")]
+    public static extern bool GetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT wp);
+
+    [DllImport("user32.dll")]
+    public static extern bool SetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT wp);
+
+    public const int SW_SHOWMAXIMIZED = 3;
+    public static readonly IntPtr HWND_TOP = IntPtr.Zero;
 
     [DllImport("user32.dll")]
     public static extern bool ShowWindow(IntPtr hwnd, int cmd);

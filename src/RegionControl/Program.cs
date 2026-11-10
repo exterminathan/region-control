@@ -21,6 +21,7 @@ public partial class DragWatcher : ApplicationContext
     MonitorInfo? _mon;       // monitor the strip is shown on
     bool _shown, _cancelled;
     EditorForm? _editor;
+    DragOrigin? _origin;     // where the current drag began
 
     public DragWatcher()
     {
@@ -105,6 +106,8 @@ public partial class DragWatcher : ApplicationContext
             ht = (int)res;
         string who = $"{Native.ProcessName(hwnd)} \"{Native.Title(hwnd)}\"";
         if (ht >= 10 && ht <= 17) { _saved.Remove(hwnd); Log($"resize start (hit {ht}), ignored: {who}"); return; }
+        EndAssist("a new drag started");
+        _origin = CaptureOrigin(hwnd);
         RestoreOnDragOut(hwnd);
         _drag = hwnd;
         _cancelled = false;
@@ -196,6 +199,7 @@ public partial class DragWatcher : ApplicationContext
         int zone = layout != null ? _strip.HoverZone : -1;
         var work = _strip.Work;
         double scale = _mon?.Scale ?? 1;
+        var origin = _origin;
         _drag = IntPtr.Zero;
         _poll.Stop();
         HideOverlay();
@@ -204,16 +208,39 @@ public partial class DragWatcher : ApplicationContext
             // Dropped on the "Layout" pill: no snap, the window stays where it is. Open the editor once the move loop ends.
             Log($"move end on the Layout pill: editor from \"{source?.Name ?? "blank"}\"");
             var te = new System.Windows.Forms.Timer { Interval = 30 };
-            te.Tick += (_, _) => { te.Stop(); te.Dispose(); OpenEditor(editMon, source); };
+            te.Tick += (_, _) =>
+            {
+                te.Stop(); te.Dispose();
+                if (origin != null) ReturnToOrigin(hwnd, origin, "dropped on the Layout pill");
+                OpenEditor(editMon, source);
+            };
             te.Start();
             return;
         }
-        if (layout == null || zone < 0) { Log(_cancelled ? "move end, cancelled" : "move end, dropped outside every zone: cancelled, no snap"); return; }
+        if (layout == null || zone < 0)
+        {
+            Log(_cancelled ? "move end, cancelled" : "move end, dropped outside every zone: cancelled, no snap");
+            if (_cancelled && origin != null)
+            {
+                // Esc or right-click with the picker open: put the window back once its move loop ends.
+                var tc = new System.Windows.Forms.Timer { Interval = 30 };
+                tc.Tick += (_, _) => { tc.Stop(); tc.Dispose(); ReturnToOrigin(hwnd, origin, "picker cancelled"); };
+                tc.Start();
+            }
+            return;
+        }
         var target = layout.ZoneRect(zone, work);
         string name = $"{layout.Name} / {(layout.Zones[zone].Name.Length > 0 ? layout.Zones[zone].Name : $"zone {zone + 1}")}";
         // Let the window's move loop finish before we place it.
         var t = new System.Windows.Forms.Timer { Interval = 30 };
-        t.Tick += (_, _) => { t.Stop(); t.Dispose(); Snap(hwnd, target, name); SnapFlash.Show(target, scale); };
+        var snapMon = _mon;
+        int snapZone = zone;
+        t.Tick += (_, _) =>
+        {
+            t.Stop(); t.Dispose();
+            Snap(hwnd, target, name); SnapFlash.Show(target, scale);
+            if (snapMon != null) BeginAssist(hwnd, layout, snapZone, snapMon);
+        };
         t.Start();
     }
 
@@ -303,6 +330,7 @@ public partial class DragWatcher : ApplicationContext
         {
             _poll.Stop();
             _esc.Dispose();
+            DisposeAssist();
             Native.UnhookWinEvent(_hook);
             _strip.Close(); _strip.Dispose();
             _zones.Close(); _zones.Dispose();

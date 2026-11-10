@@ -10,7 +10,7 @@ public partial class DragWatcher
 {
     [DllImport("user32.dll")] static extern bool IsWindow(IntPtr hwnd);
 
-    sealed record SavedSize(RECT Original, RECT ZoneFrame);
+    internal sealed record SavedSize(RECT Original, RECT ZoneFrame);
     readonly Dictionary<IntPtr, SavedSize> _saved = new();
 
     static bool Near(RECT a, RECT b, int tol = 2) =>
@@ -27,6 +27,43 @@ public partial class DragWatcher
     {
         PruneSaved();
         if (!_saved.ContainsKey(hwnd)) { var f = Native.FrameBounds(hwnd); _saved[hwnd] = new SavedSize(f, f); }
+    }
+
+    /// <summary>Where a drag began: the window rectangle, the maximized state, and any zone memory it had.</summary>
+    internal sealed record DragOrigin(RECT Rect, bool Zoomed, WINDOWPLACEMENT Placement, SavedSize? Saved);
+
+    /// <summary>Read the origin before RestoreOnDragOut changes the window.</summary>
+    DragOrigin CaptureOrigin(IntPtr hwnd)
+    {
+        Native.GetWindowRect(hwnd, out var r);
+        var wp = new WINDOWPLACEMENT { length = Marshal.SizeOf<WINDOWPLACEMENT>() };
+        Native.GetWindowPlacement(hwnd, ref wp);
+        _saved.TryGetValue(hwnd, out var saved);
+        return new DragOrigin(r, Native.IsZoomed(hwnd), wp, saved);
+    }
+
+    /// <summary>Put a window back where its drag began. Call after the move loop ends.</summary>
+    void ReturnToOrigin(IntPtr hwnd, DragOrigin o, string why)
+    {
+        if (!IsWindow(hwnd)) return;
+        if (o.Zoomed)
+        {
+            var wp = o.Placement;
+            wp.showCmd = Native.SW_SHOWMAXIMIZED;
+            Native.SetWindowPlacement(hwnd, ref wp);
+        }
+        else
+        {
+            if (Native.IsZoomed(hwnd)) Native.ShowWindow(hwnd, Native.SW_RESTORE);
+            // Two passes: the window may rescale when it crosses to a monitor with another DPI.
+            for (int i = 0; i < 2; i++)
+                Native.SetWindowPos(hwnd, IntPtr.Zero, o.Rect.Left, o.Rect.Top, o.Rect.Width, o.Rect.Height,
+                    Native.SWP_NOZORDER | Native.SWP_NOACTIVATE);
+        }
+        // Keep the zone memory when the window is back in its zone, so a later drag-out still restores its size.
+        if (o.Saved != null) _saved[hwnd] = o.Saved;
+        Native.GetWindowRect(hwnd, out var now);
+        Log($"returned to drag origin ({why}): {(o.Zoomed ? "maximized" : o.Rect.ToString())}, now {now}");
     }
 
     /// <summary>Call after a snap with the frame the window reached.</summary>
