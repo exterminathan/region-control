@@ -110,18 +110,8 @@ public class MonitorEntry
     public List<string> Layouts { get; set; } = new();
 }
 
-/// <summary>Result of Library.MoveInStrip.</summary>
-public enum StripMove
-{
-    Moved,
-    /// <summary>Moved, and now sits right behind the pinned main layout.</summary>
-    BehindMainNow,
-    /// <summary>No move: already first or last (or the layout is the main one).</summary>
-    AtEdge,
-    /// <summary>No move: only the pinned main layout is earlier.</summary>
-    BehindMain,
-    NotInStrip,
-}
+/// <summary>Result of Library.ReorderStrip.</summary>
+public enum StripMove { Moved, Added, Unchanged, PinnedMain, NotFound }
 
 /// <summary>A set: one main layout per monitor, for one monitor setup.</summary>
 public class LayoutSet
@@ -348,26 +338,31 @@ public class Library
     }
 
     /// <summary>
-    /// Move a layout earlier (delta below 0) or later (above 0) in a monitor's strip order.
-    /// With a setup key, the set's main layout stays pinned first and cannot be passed.
-    /// A move saves the new order into the strip list (main first). Call Save after it.
+    /// Put a layout at a place in a monitor's strip (newIndex is its final position, 0 = first).
+    /// A layout not in the strip is added. With a setup key, the set's main layout stays pinned
+    /// first: a drop before it lands right behind it, and blockedByMain is true.
+    /// Saves the new order into the strip list (main first). Call Save after it.
     /// </summary>
-    public StripMove MoveInStrip(string layoutId, string monitorKey, int delta, string? setupKey = null)
+    public StripMove ReorderStrip(string layoutId, string monitorKey, int newIndex, string? setupKey, out bool blockedByMain)
     {
-        var e = Monitor(monitorKey);
-        if (e == null || !e.Layouts.Contains(layoutId)) return StripMove.NotInStrip;
-        var order = e.Layouts.ToList();
+        blockedByMain = false;
+        if (Find(layoutId) == null) return StripMove.NotFound;
         string? main = setupKey == null ? null : MainFor(setupKey, monitorKey);
+        if (layoutId == main) return StripMove.PinnedMain;
+        var e = Monitor(monitorKey);
+        bool added = e == null || !e.Layouts.Contains(layoutId);
+        var order = e?.Layouts.ToList() ?? new List<string>();
         if (main != null && order.Remove(main)) order.Insert(0, main);
-        int from = order.IndexOf(layoutId);
-        if (layoutId == main || delta == 0) return StripMove.AtEdge;
         int floor = main != null && order.Contains(main) ? 1 : 0;
-        int to = Math.Clamp(from + delta, floor, order.Count - 1);
-        if (to == from) return delta < 0 && from == floor && floor == 1 ? StripMove.BehindMain : StripMove.AtEdge;
-        order.RemoveAt(from);
+        if (newIndex < floor) { blockedByMain = floor == 1; newIndex = floor; }
+        int from = order.IndexOf(layoutId);
+        if (from >= 0) order.RemoveAt(from);
+        int to = Math.Clamp(newIndex, floor, order.Count);
+        if (!added && from == to) return StripMove.Unchanged;
         order.Insert(to, layoutId);
+        if (e == null) { e = new MonitorEntry { Key = monitorKey }; Data.Monitors.Add(e); }
         e.Layouts = order;
-        return delta < 0 && to == floor && floor == 1 ? StripMove.BehindMainNow : StripMove.Moved;
+        return added ? StripMove.Added : StripMove.Moved;
     }
 
     /// <summary>Set or clear the main layout of a monitor in a set. Setting it also shows it in the strip.</summary>

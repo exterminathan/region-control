@@ -58,6 +58,11 @@ public class EditorForm : Form
     bool _openPanel;
     Rectangle _panel;
     readonly List<(Rectangle cell, ZoneLayout? layout)> _openCells = new();
+    int _openStrip;          // number of strip cards (they follow the Blank card)
+    int _cardDown = -1;      // cell index under the mouse button, -1 when none
+    bool _cardDragging;      // true once the mouse moved far enough to lift the card
+    Point _cardGrab;         // mouse offset inside the lifted card
+    int _cardTarget = -1;    // cell index the card would drop on, -1 for no valid drop
 
     readonly Dictionary<int, Rectangle> _chips = new();
     string? _toast;
@@ -230,13 +235,6 @@ public class EditorForm : Form
             new() { Id = "delete", Glyph = "delete", Text = _deleteArmedUntil != default ? "Click again to delete" : "Delete", Enabled = _lib.Find(_m.LayoutId) != null },
             new() { Kind = Kind.Sep },
         };
-        if (_lib.Find(_m.LayoutId) != null)
-        {
-            bool inStrip = _lib.IsShown(_m.LayoutId!, _mon.Key);
-            list.Add(new Item { Id = "earlier", Text = "Earlier", Enabled = inStrip });
-            list.Add(new Item { Id = "later", Text = "Later", Enabled = inStrip });
-            list.Add(new Item { Kind = Kind.Sep });
-        }
         list.Add(new Item { Text = "Show on", Kind = Kind.Label });
         foreach (var mon in _monitors)
             list.Add(new Item { Id = "mon:" + mon.Key, Glyph = "monitor", Text = mon.Key == _mon.Key ? $"{mon.Number} here" : $"{mon.Number}", On = _showOn.Contains(mon.Key) });
@@ -331,8 +329,6 @@ public class EditorForm : Form
         "save" => "Save this layout (overwrites the opened one).  Ctrl+S",
         "savecopy" => "Save as a new layout and keep the original.  Ctrl+Shift+S",
         "delete" => "Delete the opened layout from the library. Click twice.",
-        "earlier" => "Move earlier in this monitor's picker.",
-        "later" => "Move later in this monitor's picker.",
         "main" => "Main: first in this monitor's picker for this monitor setup (the set).",
         "close" => "Close the editor.  Esc",
         _ when id.StartsWith("mon:") => "Show this layout in that monitor's picker. Applies on Save.",
@@ -364,8 +360,6 @@ public class EditorForm : Form
             case "save": Save(false); break;
             case "savecopy": Save(true); break;
             case "delete": DeleteLayout(); break;
-            case "earlier": MoveInStrip(-1); break;
-            case "later": MoveInStrip(1); break;
             case "main":
                 _main = !_main;
                 if (_main) _showOn.Add(_mon.Key);
@@ -393,6 +387,8 @@ public class EditorForm : Form
         // This monitor's strip first, then the rest of the library.
         var strip = _lib.StripFor(_mon.Key, _setKey);
         all.AddRange(strip);
+        _openStrip = strip.Count;
+        _cardDown = -1; _cardDragging = false; _cardTarget = -1;
         all.AddRange(_lib.Data.Layouts.Where(l => !strip.Contains(l)));
         int W = ClientSize.Width, H = ClientSize.Height;
         int pad = S(24), gap = S(18), labelH = S(26), titleH = S(64);
@@ -411,6 +407,71 @@ public class EditorForm : Form
             _openCells.Add((cell, all[i]));
         }
         Invalidate();
+    }
+
+    // Drag a card in the Open panel to set the picker order of this monitor.
+
+    /// <summary>The cell index a drop at p would use, or -1. Only strip cards are targets.</summary>
+    int CardTargetAt(Point p)
+    {
+        int i = _openCells.FindIndex(o => o.cell.Contains(p));
+        return i >= 1 && i <= _openStrip ? i : -1;
+    }
+
+    void OpenCardMove(Point p)
+    {
+        _mouse = p;
+        var (cell, layout) = _openCells[_cardDown];
+        if (!_cardDragging && layout != null && Math.Abs(p.X - _down.X) + Math.Abs(p.Y - _down.Y) > S(6))
+        {
+            _cardDragging = true;
+            _cardGrab = new Point(_down.X - cell.X, _down.Y - cell.Y);
+        }
+        if (_cardDragging)
+        {
+            _cardTarget = CardTargetAt(p);
+            if (_cardTarget == _cardDown) _cardTarget = -1; // over its own slot: nothing to do
+            if (Cursor != Cursors.SizeAll) Cursor = Cursors.SizeAll;
+        }
+        Invalidate();
+    }
+
+    void OpenCardUp(Point p)
+    {
+        int down = _cardDown, target = _cardTarget;
+        bool dragging = _cardDragging;
+        _cardDown = -1; _cardDragging = false; _cardTarget = -1;
+        if (down < 0 || down >= _openCells.Count) return;
+        var layout = _openCells[down].layout;
+        if (!dragging)
+        {
+            // A click without a move: open it, but only when the button went up on the same card.
+            if (_openCells.FindIndex(o => o.cell.Contains(p)) == down) LoadLayout(layout);
+            else Invalidate();
+            return;
+        }
+        if (layout == null || target < 0) { Invalidate(); return; }
+        // Cell 0 is Blank, so strip index = cell index - 1.
+        var r = _lib.ReorderStrip(layout.Id, _mon.Key, target - 1, _setKey, out bool blocked);
+        if (r is StripMove.Unchanged or StripMove.PinnedMain or StripMove.NotFound)
+        {
+            Toast(r == StripMove.PinnedMain ? $"\"{layout.Name}\" is the main layout, so it stays first."
+                : blocked ? "The main layout stays first, so this layout stays behind it." : "Order unchanged.");
+            Invalidate();
+            return;
+        }
+        try { _lib.Save(); }
+        catch (Exception ex) { Warn("Could not save the layouts file: " + ex.Message, 8); OpenPanel(); return; }
+        // A layout that was only on another monitor is now shown here too: keep the editor's Show on in step.
+        if (r == StripMove.Added && layout.Id == _m.LayoutId) _showOn.Add(_mon.Key);
+        OpenPanel();
+        int pos = _lib.StripFor(_mon.Key, _setKey).FindIndex(l => l.Id == layout.Id) + 1;
+        string msg = r == StripMove.Added
+            ? $"Added \"{layout.Name}\" to this monitor's picker at position {pos}."
+            : $"Moved \"{layout.Name}\" to position {pos} in the picker.";
+        if (blocked) msg += " The main layout stays first.";
+        Toast(msg, 5);
+        DragWatcher.Log($"editor reordered strip: \"{layout.Name}\" ({layout.Id}) to position {pos}{(r == StripMove.Added ? " (added)" : "")}");
     }
 
     void LoadLayout(ZoneLayout? layout)
@@ -475,27 +536,6 @@ public class EditorForm : Form
         DragWatcher.Log($"editor saved \"{layout.Name}\" ({layout.Id}), {layout.Zones.Count} zones, shown on monitor {string.Join(", ", on)}{(_main ? ", main" : "")}");
     }
 
-    void MoveInStrip(int delta)
-    {
-        var layout = _lib.Find(_m.LayoutId);
-        if (layout == null) { Warn("Open a saved layout first."); return; }
-        if (_lib.MainFor(_setKey, _mon.Key) == layout.Id) { Toast($"\"{layout.Name}\" is the main layout, so it stays first."); return; }
-        var r = _lib.MoveInStrip(layout.Id, _mon.Key, delta, _setKey);
-        switch (r)
-        {
-            case StripMove.NotInStrip: Warn("This layout is not in this monitor's picker. Turn on this monitor under Show on, and save."); return;
-            case StripMove.BehindMain: Toast("The main layout stays first, so this layout cannot go earlier."); return;
-            case StripMove.AtEdge: Toast(delta < 0 ? "Already first in the picker." : "Already last in the picker."); return;
-        }
-        try { _lib.Save(); }
-        catch (Exception ex) { Warn("Could not save the layouts file: " + ex.Message, 8); return; }
-        int pos = _lib.StripFor(_mon.Key, _setKey).FindIndex(l => l.Id == layout.Id) + 1;
-        Toast(r == StripMove.BehindMainNow
-            ? $"Moved \"{layout.Name}\" to position {pos}. The main layout stays first."
-            : $"Moved \"{layout.Name}\" to position {pos}.");
-        DragWatcher.Log($"editor moved \"{layout.Name}\" ({layout.Id}) to strip position {pos}");
-    }
-
     void DeleteLayout()
     {
         var existing = _lib.Find(_m.LayoutId);
@@ -538,7 +578,7 @@ public class EditorForm : Form
         _mouse = p;
         _hoverItem = null; _hoverZone = -1; _hoverChip = -1; _hv = _hh = null;
         Cursor c = Cursors.Default;
-        if (_openPanel) { c = _openCells.Any(o => o.cell.Contains(p)) ? Cursors.Hand : Cursors.Default; }
+        if (_openPanel) { c = _cardDragging ? Cursors.SizeAll : _openCells.Any(o => o.cell.Contains(p)) ? Cursors.Hand : Cursors.Default; }
         else if (InUi(p))
         {
             var it = ItemAt(p);
@@ -578,8 +618,8 @@ public class EditorForm : Form
 
         if (_openPanel)
         {
-            var hit = _openCells.FirstOrDefault(o => o.cell.Contains(e.Location));
-            if (hit.cell != Rectangle.Empty) LoadLayout(hit.layout);
+            int hi = _openCells.FindIndex(o => o.cell.Contains(e.Location));
+            if (hi >= 0) { _cardDown = hi; _cardDragging = false; _cardTarget = -1; }
             else if (!_panel.Contains(e.Location)) { _openPanel = false; Invalidate(); }
             return;
         }
@@ -632,6 +672,7 @@ public class EditorForm : Form
         _mouse = e.Location;
         double fx = FX(e.X), fy = FY(e.Y);
         const double eps = 1e-7;
+        if (_openPanel && _cardDown >= 0) { OpenCardMove(e.Location); return; }
         _guides.Clear();
         switch (_drag)
         {
@@ -706,6 +747,7 @@ public class EditorForm : Form
     protected override void OnMouseUp(MouseEventArgs e)
     {
         base.OnMouseUp(e);
+        if (_cardDown >= 0) { OpenCardUp(e.Location); return; }
         double fx = FX(e.X), fy = FY(e.Y);
         switch (_drag)
         {
@@ -794,7 +836,8 @@ public class EditorForm : Form
         {
             case Keys.Escape:
                 if (_drag is DragKind.Divider or DragKind.Move) _m.CancelDrag();
-                if (_drag != DragKind.None) { _drag = DragKind.None; _dv = _dh = null; _drawing = false; _guides.Clear(); }
+                if (_cardDown >= 0) { _cardDown = -1; _cardDragging = false; _cardTarget = -1; }
+                else if (_drag != DragKind.None) { _drag = DragKind.None; _dv = _dh = null; _drawing = false; _guides.Clear(); }
                 else if (_openPanel) _openPanel = false;
                 else if (_helpOn) _helpOn = false;
                 else TryClose();
@@ -1453,14 +1496,23 @@ public class EditorForm : Form
         Glass.Frosted(g, pr, radius, Theme.A(BarBack, Theme.Glass ? 0.92 : 1), (float)_scale);
         var back = BarBack;
         TextRenderer.DrawText(g, "Start from", _fBig, new Point(_panel.X + S(24), _panel.Y + S(18)), Theme.Text);
-        TextRenderer.DrawText(g, "Click a layout to edit it. Save overwrites it; Save copy keeps the original. Esc or a click outside closes this.",
+        TextRenderer.DrawText(g, "Click a layout to edit it. Drag one to change its place in this monitor's picker. Esc or a click outside closes this.",
             _fSmall, new Point(_panel.X + S(24), _panel.Y + S(44)), Theme.Dim);
         int W = ClientSize.Width, H = ClientSize.Height;
         var blank = new ZoneLayout { Name = "Blank: one zone", Zones = { new Zone { X = 0, Y = 0, W = 100, H = 100 } } };
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+        int ci = -1;
         foreach (var (cell, layout) in _openCells)
         {
-            bool hot = cell.Contains(_mouse);
+            ci++;
+            if (_cardDragging && ci == _cardDown)
+            {
+                // The slot the card was lifted from: an empty dashed outline.
+                using var dash = new Pen(Theme.A(Theme.Dim, 0.5), F(1.5)) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash };
+                g.DrawRectangle(dash, cell);
+                continue;
+            }
+            bool hot = !_cardDragging && cell.Contains(_mouse);
             bool current = layout != null && layout.Id == _m.LayoutId;
             Thumb.Draw(g, layout ?? blank, cell, W, H, _scale, -1, hot ? 1 : current ? 0.6f : 0, back);
             string name = layout == null ? blank.Name : layout.Name;
@@ -1473,6 +1525,28 @@ public class EditorForm : Form
             Thumb.Label(g, name, star, new RectangleF(cell.X - S(6), cell.Bottom + S(4), cell.Width + S(12), S(20)), _fSmall, hot ? Theme.Text : Theme.Dim, _scale);
         }
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+        if (_cardDragging && _cardDown >= 0 && _openCells[_cardDown].layout is { } lifted)
+        {
+            if (_cardTarget >= 0)
+            {
+                // Drop marker: a bar on the side of the target card the dragged card would land on.
+                var t = _openCells[_cardTarget].cell;
+                bool before = _cardDown > _openStrip || _cardTarget < _cardDown;
+                if (_cardTarget == 1 && _lib.MainFor(_setKey, _mon.Key) == _openCells[1].layout?.Id) before = false;
+                int bx = before ? t.X - S(9) : t.Right + S(6);
+                var bar = new RectangleF(bx, t.Y - S(4), S(4), t.Height + S(8));
+                using var path = Theme.Round(bar, bar.Width / 2f);
+                using var fill = new SolidBrush(Theme.Accent);
+                g.FillPath(fill, path);
+            }
+            var c0 = _openCells[_cardDown].cell;
+            int grow = S(6);
+            var lr = new Rectangle(_mouse.X - _cardGrab.X - grow, _mouse.Y - _cardGrab.Y - grow, c0.Width + 2 * grow, c0.Height + 2 * grow);
+            Glass.Shadow(g, new RectangleF(lr.X, lr.Y, lr.Width, lr.Height), F(6), F(22), F(8));
+            g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            Thumb.Draw(g, lifted, lr, W, H, _scale, -1, 1f, back);
+            g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+        }
     }
 
     void PaintToast(Graphics g)
