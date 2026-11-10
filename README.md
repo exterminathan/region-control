@@ -6,7 +6,7 @@
 
 Custom snap layouts for Windows 11. Drag a window to the top edge of the screen and pick from your own layouts, not just even splits. Draw the layouts yourself.
 
-> **Pre-release (v0.1.0).** Region Control works on the author's PC, but it has had little testing elsewhere. The installer is not code-signed, so Windows SmartScreen will warn you. See [Known limits](#known-limits).
+> **Pre-release (v0.1.1).** Region Control works on the author's PC, but it has had little testing elsewhere. The installer is not code-signed, so Windows SmartScreen will warn you. See [Known limits](#known-limits).
 
 ## Features
 
@@ -26,19 +26,19 @@ Custom snap layouts for Windows 11. Drag a window to the top edge of the screen 
 
 Requires Windows 11 (64-bit). You do not need to install .NET.
 
-1. Download **RegionControl-Setup-0.1.0.exe** from the [latest release](../../releases/latest).
+1. Download **RegionControl-Setup-0.1.1.exe** from the [latest release](../../releases/latest).
 2. Run it. If Windows SmartScreen says "Windows protected your PC", choose **More info**, then **Run anyway**. The installer is unsigned for now.
 3. On the tasks page, choose how to deal with Windows' own snapping (see below).
 4. Finish the wizard. Region Control starts in the system tray. If you do not see its icon, click the **^** arrow next to the clock.
 
 The installer installs for the current user by default. You can also install for all users. It upgrades an older version in place and keeps your layouts.
 
-**Portable:** download **RegionControl-Portable-0.1.0.exe** and run it from any folder. It is the same program in one file.
+**Portable:** download **RegionControl-Portable-0.1.1.exe** and run it from any folder. It is the same program in one file.
 
 To check a download, compare it with `SHA256SUMS.txt` from the release page:
 
 ```powershell
-Get-FileHash .\RegionControl-Setup-0.1.0.exe -Algorithm SHA256
+Get-FileHash .\RegionControl-Setup-0.1.1.exe -Algorithm SHA256
 ```
 
 ### Turn off Windows' own drag snapping
@@ -57,9 +57,12 @@ If you use the portable exe, run `src/native-snap-off.ps1` from this repository 
 1. Drag any window by its title bar to the top edge of a screen.
 2. Pick a layout in the strip. Hover it to see its zones.
 3. Drop the window on a zone. The window snaps to it.
-4. Press **Esc**, right-click, or drop outside every zone to cancel.
+4. If the layout has more zones, a window picker opens in each empty zone in turn (left to right, bottom to top). Pick a window to snap it there, or choose **Skip this zone**. **Esc** ends the sequence.
+5. Press **Esc**, right-click, or drop outside every zone to cancel. Esc and right-click put the window back where the drag began.
 
 To edit layouts, drop a window on the **Layout** pill, or right-click the tray icon and choose **Edit layouts**. In the editor, press **?** (or H or F1) for the shortcuts.
+
+In the editor, choose **Open** and drag a layout card to change the order of the picker strip. The **Blank** card starts an empty screen: draw your own zones.
 
 Your layouts are saved automatically. See [Files](#files).
 
