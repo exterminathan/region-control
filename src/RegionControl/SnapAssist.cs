@@ -45,9 +45,7 @@ public partial class DragWatcher
             var s = new AssistSession { Layout = layout, Work = mon.Work, Scale = mon.Scale };
             s.Placed.Add(placed);
             s.Filled.Add(layout.ZoneRect(zone, mon.Work));
-            s.Zones = Enumerable.Range(0, layout.Zones.Count).Where(i => i != zone)
-                .Select(i => (i, r: layout.ZoneRect(i, mon.Work))).OrderBy(x => x.r.Top).ThenBy(x => x.r.Left)
-                .Select(x => x.i).ToList();
+            s.Zones = OrderZones(layout, zone, mon.Work);
             var first = AssistWindows.Enumerate(s.Placed);
             if (first.Count == 0) { first.ForEach(w => w.Dispose()); Log("snap assist: no other windows to offer"); return; }
 
@@ -93,6 +91,28 @@ public partial class DragWatcher
         });
     }
 
+    /// <summary>Left to right by column (lefts within 5% of the work width form one column), each column from the bottom up.</summary>
+    static List<int> OrderZones(ZoneLayout layout, int skip, RECT work)
+    {
+        var zs = Enumerable.Range(0, layout.Zones.Count).Where(i => i != skip)
+            .Select(i => (i, r: layout.ZoneRect(i, work))).OrderBy(x => x.r.Left).ToList();
+        int tol = (int)Math.Round(work.Width * 0.05);
+        var result = new List<int>();
+        var col = new List<(int i, RECT r)>();
+        void Flush()
+        {
+            result.AddRange(col.OrderByDescending(x => x.r.Bottom).ThenBy(x => x.r.Left).Select(x => x.i));
+            col.Clear();
+        }
+        foreach (var z in zs)
+        {
+            if (col.Count > 0 && z.r.Left - col[0].r.Left > tol) Flush();
+            col.Add(z);
+        }
+        Flush();
+        return result;
+    }
+
     static long Area(RECT r) => (long)Math.Max(0, r.Width) * Math.Max(0, r.Height);
 
     static long Overlap(RECT a, RECT b) =>
@@ -112,7 +132,9 @@ public partial class DragWatcher
             foreach (var w in s.Entries) w.Dispose();
             s.Entries = AssistWindows.Enumerate(s.Placed);
             if (s.Entries.Count == 0) { EndAssist("no windows left"); return; }
-            if (!_assistForm!.Open(s.Work, zr, s.Scale, s.Entries, $"Zone {zi + 1}"))
+            var vs = SystemInformation.VirtualScreen;
+            var virt = new RECT(vs.Left, vs.Top, vs.Right, vs.Bottom);
+            if (!_assistForm!.Open(virt, s.Work, zr, s.Scale, s.Entries, $"Zone {zi + 1}"))
             {
                 Log($"snap assist: zone {zi + 1} too small for the picker, skipped");
                 s.Index++;
@@ -140,7 +162,7 @@ public partial class DragWatcher
         var w = s.Entries[idx];
         int zi = s.Zones[s.Index];
         var target = s.Layout.ZoneRect(zi, s.Work);
-        _assistForm!.Hide();
+        _assistForm!.Gap();
         _assistKeys!.Uninstall();
         string zname = s.Layout.Zones[zi].Name.Length > 0 ? s.Layout.Zones[zi].Name : $"zone {zi + 1}";
         string name = $"{s.Layout.Name} / {zname}";
@@ -165,7 +187,7 @@ public partial class DragWatcher
         var s = _as;
         if (s == null) return;
         Log($"snap assist: zone {s.Zones[s.Index] + 1} skipped ({why})");
-        _assistForm!.Hide();
+        _assistForm!.Gap();
         _assistKeys!.Uninstall();
         s.Index++;
         AssistLater(NextAssistStep, 60);
@@ -391,7 +413,7 @@ sealed class AssistForm : OverlayForm
     public Func<IntPtr, Bitmap?> Thumb = _ => null;
 
     double _sc = 1;
-    Rectangle _zone, _panel, _header;
+    Rectangle _zone, _panel, _header, _dim;
     List<AssistWindow> _items = new();
     Rectangle[] _tiles = Array.Empty<Rectangle>();   // one per item, then the Skip tile; window coordinates
     int _cols = 1, _sel, _hover = -1, _titleH, _pad;
@@ -417,10 +439,11 @@ sealed class AssistForm : OverlayForm
     int TileHeight(int tw) => (int)(tw * 0.62) + _titleH;
 
     /// <summary>Lay out and show the picker for a zone. Returns false when the zone is too small. The form must be hidden when called.</summary>
-    public bool Open(RECT work, RECT zone, double scale, List<AssistWindow> items, string label)
+    public bool Open(RECT cover, RECT work, RECT zone, double scale, List<AssistWindow> items, string label)
     {
         _sc = scale;
-        _zone = new Rectangle(zone.Left - work.Left, zone.Top - work.Top, zone.Width, zone.Height);
+        _dim = new Rectangle(work.Left - cover.Left, work.Top - cover.Top, work.Width, work.Height);
+        _zone = new Rectangle(zone.Left - cover.Left, zone.Top - cover.Top, zone.Width, zone.Height);
         int inset = _zone.Width > S(240) && _zone.Height > S(200) ? S(10) : S(4);
         var panel = Rectangle.Inflate(_zone, -inset, -inset);
         if (panel.Width < S(130) || panel.Height < S(90)) return false;
@@ -468,14 +491,26 @@ sealed class AssistForm : OverlayForm
             _fontScale = scale;
         }
         _blur?.Dispose();
-        _blur = Glass.Backdrop(new Rectangle(work.Left + panel.X, work.Top + panel.Y, panel.Width, panel.Height), Theme.BlurRadiusSmall);
+        _blur = Glass.Backdrop(new Rectangle(cover.Left + panel.X, cover.Top + panel.Y, panel.Width, panel.Height), Theme.BlurRadiusSmall);
 
-        SetGeometry(new Rectangle(work.Left, work.Top, work.Width, work.Height));
+        // The form covers every monitor, so no click reaches a window underneath while a picker is open.
+        bool wasVisible = Visible;
+        SetGeometry(new Rectangle(cover.Left, cover.Top, cover.Width, cover.Height));
         _openedAt = Environment.TickCount64;
         Anim.Stop();
-        ShowRendered(Theme.Animate ? (byte)0 : (byte)255);
-        if (Theme.Animate) Anim.Start(Theme.FadeInMs, t => Compose((byte)Math.Round(255 * Theme.Ease(t))));
+        ShowRendered(Theme.Animate && !wasVisible ? (byte)0 : (byte)255);
+        if (Theme.Animate && !wasVisible) Anim.Start(Theme.FadeInMs, t => Compose((byte)Math.Round(255 * Theme.Ease(t))));
         return true;
+    }
+
+    /// <summary>Between two pickers: drop the panel but keep the near-invisible scrim, so clicks still do not pass through.</summary>
+    public void Gap()
+    {
+        if (!Visible) return;
+        _tiles = Array.Empty<Rectangle>(); _items = new(); _dim = Rectangle.Empty;
+        Anim.Stop();
+        Compose(255);
+        Render();
     }
 
     Rectangle Dirty => Rectangle.Inflate(_zone, S(30), S(30));
@@ -531,8 +566,10 @@ sealed class AssistForm : OverlayForm
 
     protected override void PaintLayer(Surface s, Graphics g, Rectangle dirty)
     {
-        s.Fill(dirty, Color.FromArgb(Math.Max(16, (int)Theme.Scrim.A), Theme.Scrim.R, Theme.Scrim.G, Theme.Scrim.B));
+        // Everywhere: almost invisible but not transparent, so the window catches every click.
+        s.Fill(dirty, Color.FromArgb(16, 0, 0, 0));
         if (_tiles.Length == 0 || _fTitle == null) return;
+        s.Fill(Rectangle.Intersect(dirty, _dim), Color.FromArgb(Math.Max(16, (int)Theme.Scrim.A), Theme.Scrim.R, Theme.Scrim.G, Theme.Scrim.B));
         float f = (float)_sc;
         // The zone being filled.
         var zr = RectangleF.Inflate(_zone, -2 * f, -2 * f);

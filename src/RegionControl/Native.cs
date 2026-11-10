@@ -179,6 +179,10 @@ public static class Native
     [DllImport("user32.dll")]
     public static extern bool SetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT wp);
 
+    [DllImport("user32.dll")]
+    public static extern bool PostMessage(IntPtr hwnd, uint msg, IntPtr wp, IntPtr lp);
+    public const uint WM_CANCELMODE = 0x001F;
+
     public const int SW_SHOWMAXIMIZED = 3;
     public static readonly IntPtr HWND_TOP = IntPtr.Zero;
 

@@ -141,6 +141,9 @@ public partial class DragWatcher : ApplicationContext
             {
                 _cancelled = true;
                 HideOverlay();
+                // End the window's move loop now, so MOVESIZEEND fires and OnEnd puts the window back at once,
+                // even while the mouse button is still held.
+                Native.PostMessage(_drag, Native.WM_CANCELMODE, IntPtr.Zero, IntPtr.Zero);
                 Log($"picker cancelled with {(esc ? "Esc" : "right-click")}");
                 return;
             }
@@ -207,7 +210,7 @@ public partial class DragWatcher : ApplicationContext
         {
             // Dropped on the "Layout" pill: no snap, the window stays where it is. Open the editor once the move loop ends.
             Log($"move end on the Layout pill: editor from \"{source?.Name ?? "blank"}\"");
-            var te = new System.Windows.Forms.Timer { Interval = 30 };
+            var te = new System.Windows.Forms.Timer { Interval = 2 };
             te.Tick += (_, _) =>
             {
                 te.Stop(); te.Dispose();
@@ -223,7 +226,7 @@ public partial class DragWatcher : ApplicationContext
             if (_cancelled && origin != null)
             {
                 // Esc or right-click with the picker open: put the window back once its move loop ends.
-                var tc = new System.Windows.Forms.Timer { Interval = 30 };
+                var tc = new System.Windows.Forms.Timer { Interval = 2 };
                 tc.Tick += (_, _) => { tc.Stop(); tc.Dispose(); ReturnToOrigin(hwnd, origin, "picker cancelled"); };
                 tc.Start();
             }
