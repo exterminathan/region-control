@@ -30,7 +30,6 @@ public class EditorForm : Form
     readonly EditorModel _m;
     readonly double _scale;
     readonly HashSet<string> _showOn = new();
-    bool _main;
 
     Tool _tool = Tool.Split;
     DragKind _drag;
@@ -212,9 +211,9 @@ public class EditorForm : Form
         var list = new List<Item>
         {
             new() { Id = "grip", Glyph = "grip", MinW = S(22) },
-            new() { Id = "tool.split", Glyph = "split", Text = "Split", Key = "S", On = _tool == Tool.Split },
+            new() { Id = "tool.split", Glyph = "split", Text = "Split", Key = "S", On = _tool == Tool.Split, Enabled = _m.Zones.Count > 0 },
             new() { Id = "tool.draw", Glyph = "draw", Text = "Draw", Key = "D", On = _tool == Tool.Draw },
-            new() { Id = "tool.move", Glyph = "move", Text = "Move", Key = "M", On = _tool == Tool.Move },
+            new() { Id = "tool.move", Glyph = "move", Text = "Move", Key = "M", On = _tool == Tool.Move, Enabled = _m.Zones.Count > 0 },
             new() { Kind = Kind.Sep },
             new() { Id = "undo", Glyph = "undo", Enabled = _m.CanUndo },
             new() { Id = "redo", Glyph = "redo", Enabled = _m.CanRedo },
@@ -238,7 +237,6 @@ public class EditorForm : Form
         list.Add(new Item { Text = "Show on", Kind = Kind.Label });
         foreach (var mon in _monitors)
             list.Add(new Item { Id = "mon:" + mon.Key, Glyph = "monitor", Text = mon.Key == _mon.Key ? $"{mon.Number} here" : $"{mon.Number}", On = _showOn.Contains(mon.Key) });
-        list.Add(new Item { Id = "main", Glyph = _main ? "star" : "star-outline", Text = "Main", On = _main });
         list.Add(new Item { Kind = Kind.Sep });
         list.Add(new Item { Id = "close", Glyph = "close" });
         return list;
@@ -329,7 +327,6 @@ public class EditorForm : Form
         "save" => "Save this layout (overwrites the opened one).  Ctrl+S",
         "savecopy" => "Save as a new layout and keep the original.  Ctrl+Shift+S",
         "delete" => "Delete the opened layout from the library. Click twice.",
-        "main" => "Main: first in this monitor's picker for this monitor setup (the set).",
         "close" => "Close the editor.  Esc",
         _ when id.StartsWith("mon:") => "Show this layout in that monitor's picker. Applies on Save.",
         _ => "",
@@ -360,17 +357,12 @@ public class EditorForm : Form
             case "save": Save(false); break;
             case "savecopy": Save(true); break;
             case "delete": DeleteLayout(); break;
-            case "main":
-                _main = !_main;
-                if (_main) _showOn.Add(_mon.Key);
-                break;
             case "close": TryClose(); break;
             default:
                 if (it.Id.StartsWith("mon:"))
                 {
                     string key = it.Id[4..];
                     if (!_showOn.Remove(key)) _showOn.Add(key);
-                    if (key == _mon.Key && !_showOn.Contains(key)) _main = false;
                 }
                 break;
         }
@@ -476,15 +468,12 @@ public class EditorForm : Form
         }
         int final = layout == null ? -1 : CardFinal(down, target);
         if (layout == null || final < 0) { Invalidate(); return; }
-        // Cell 0 is Blank, so strip index = cell index - 1.
-        var r = _lib.ReorderStrip(layout.Id, _mon.Key, final - 1, _setKey, out bool blocked);
-        if (r is StripMove.Unchanged or StripMove.PinnedMain or StripMove.NotFound)
-        {
-            Toast(r == StripMove.PinnedMain ? $"\"{layout.Name}\" is the main layout, so it stays first."
-                : blocked ? "The main layout stays first, so this layout stays behind it." : "Order unchanged.");
-            Invalidate();
-            return;
-        }
+        // Work on the ids the panel shows (StripFor is what OpenPanel listed after Blank), so the slot matches the screen.
+        var ids = _lib.StripFor(_mon.Key, _setKey).Select(l => l.Id).ToList();
+        bool wasIn = ids.Remove(layout.Id);
+        ids.Insert(Math.Clamp(final - 1, 0, ids.Count), layout.Id);
+        var r = wasIn ? StripMove.Moved : StripMove.Added;
+        if (!_lib.SetStripOrder(_mon.Key, ids)) { Toast("Order unchanged."); Invalidate(); return; }
         try { _lib.Save(); }
         catch (Exception ex) { Warn("Could not save the layouts file: " + ex.Message, 8); OpenPanel(); return; }
         // A layout that was only on another monitor is now shown here too: keep the editor's Show on in step.
@@ -494,7 +483,6 @@ public class EditorForm : Form
         string msg = r == StripMove.Added
             ? $"Added \"{layout.Name}\" to this monitor's picker at position {pos}."
             : $"Moved \"{layout.Name}\" to position {pos} in the picker.";
-        if (blocked) msg += " The main layout stays first.";
         Toast(msg, 5);
         DragWatcher.Log($"editor reordered strip: \"{layout.Name}\" ({layout.Id}) to position {pos}{(r == StripMove.Added ? " (added)" : "")}");
     }
@@ -505,15 +493,15 @@ public class EditorForm : Form
         if (layout == null)
         {
             _m.NewBlank();
-            _showOn.Clear(); _showOn.Add(_mon.Key); _main = false;
-            Toast("New layout: one zone. Click to split it, or draw zones.");
+            _tool = Tool.Draw;
+            _showOn.Clear(); _showOn.Add(_mon.Key);
+            Toast("Blank layout: no zones yet. Drag on the screen to draw a zone.", 5);
         }
         else
         {
             _m.Load(layout);
             _showOn.Clear();
             foreach (var mon in _monitors) if (_lib.IsShown(layout.Id, mon.Key)) _showOn.Add(mon.Key);
-            _main = _lib.MainFor(_setKey, _mon.Key) == layout.Id;
             Toast($"Editing \"{layout.Name}\". Save overwrites it; Save copy keeps the original.");
         }
         Invalidate();
@@ -531,7 +519,7 @@ public class EditorForm : Form
         string name = src.Name + " copy";
         for (int k = 2; _lib.Data.Layouts.Any(l => l.Name == name); k++) name = $"{src.Name} copy {k}";
         _m.Name = name;
-        _showOn.Clear(); _showOn.Add(_mon.Key); _main = false;
+        _showOn.Clear(); _showOn.Add(_mon.Key);
         Toast($"New layout from \"{src.Name}\". Save keeps it as a new layout.", 5);
         Invalidate();
     }
@@ -550,15 +538,13 @@ public class EditorForm : Form
         _m.Name = layout.Name;
         _lib.Upsert(layout);
         foreach (var mon in _monitors) _lib.SetShown(layout.Id, mon.Key, _showOn.Contains(mon.Key), mon.Label);
-        if (_main) _lib.SetMain(_setKey, _mon.Key, layout.Id, _setName);
-        else if (_lib.MainFor(_setKey, _mon.Key) == layout.Id) _lib.SetMain(_setKey, _mon.Key, null);
         try { _lib.Save(); }
         catch (Exception ex) { Warn("Could not save the layouts file: " + ex.Message, 8); return; }
         _m.MarkSaved();
         var on = _monitors.Where(m => _showOn.Contains(m.Key)).Select(m => m.Number.ToString()).ToList();
         if (on.Count == 0) Warn($"Saved \"{layout.Name}\", but it shows on no monitor. Turn on a monitor under Show on, then save again.", 5);
-        else Toast($"Saved \"{layout.Name}\" ({layout.Zones.Count} zones). In the picker on monitor {string.Join(", ", on)}{(_main ? ", as main" : "")}.", 5);
-        DragWatcher.Log($"editor saved \"{layout.Name}\" ({layout.Id}), {layout.Zones.Count} zones, shown on monitor {string.Join(", ", on)}{(_main ? ", main" : "")}");
+        else Toast($"Saved \"{layout.Name}\" ({layout.Zones.Count} zones). In the picker on monitor {string.Join(", ", on)}.", 5);
+        DragWatcher.Log($"editor saved \"{layout.Name}\" ({layout.Id}), {layout.Zones.Count} zones, shown on monitor {string.Join(", ", on)}");
     }
 
     void DeleteLayout()
@@ -871,9 +857,9 @@ public class EditorForm : Form
             case Keys.Z when ctrl: _m.Undo(); break;
             case Keys.Y when ctrl: _m.Redo(); break;
             case Keys.S when ctrl: Save(shift); break;
-            case Keys.S: _tool = Tool.Split; break;
+            case Keys.S: if (_m.Zones.Count > 0) _tool = Tool.Split; break;
             case Keys.D: _tool = Tool.Draw; break;
-            case Keys.M: _tool = Tool.Move; break;
+            case Keys.M: if (_m.Zones.Count > 0) _tool = Tool.Move; break;
             case Keys.O: OpenPanel(); break;
             case Keys.H or Keys.F1: _helpOn = !_helpOn; break;
             case Keys.OemQuestion: _helpOn = !_helpOn; break;
@@ -1524,7 +1510,7 @@ public class EditorForm : Form
         TextRenderer.DrawText(g, "Click a layout to edit it. Drag one to change its place in this monitor's picker. Esc or a click outside closes this.",
             _fSmall, new Point(_panel.X + S(24), _panel.Y + S(44)), Theme.Dim);
         int W = ClientSize.Width, H = ClientSize.Height;
-        var blank = new ZoneLayout { Name = "Blank: one zone", Zones = { new Zone { X = 0, Y = 0, W = 100, H = 100 } } };
+        var blank = new ZoneLayout { Name = "Blank: no zones" };
         g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
         int ci = -1;
         foreach (var (cell, layout) in _openCells)
@@ -1541,13 +1527,8 @@ public class EditorForm : Form
             bool current = layout != null && layout.Id == _m.LayoutId;
             Thumb.Draw(g, layout ?? blank, cell, W, H, _scale, -1, hot ? 1 : current ? 0.6f : 0, back);
             string name = layout == null ? blank.Name : layout.Name;
-            bool star = false;
-            if (layout != null)
-            {
-                star = _lib.MainFor(_setKey, _mon.Key) == layout.Id;
-                if (!_lib.IsShown(layout.Id, _mon.Key)) name += " (other monitor)";
-            }
-            Thumb.Label(g, name, star, new RectangleF(cell.X - S(6), cell.Bottom + S(4), cell.Width + S(12), S(20)), _fSmall, hot ? Theme.Text : Theme.Dim, _scale);
+            if (layout != null && !_lib.IsShown(layout.Id, _mon.Key)) name += " (other monitor)";
+            Thumb.Label(g, name, false, new RectangleF(cell.X - S(6), cell.Bottom + S(4), cell.Width + S(12), S(20)), _fSmall, hot ? Theme.Text : Theme.Dim, _scale);
         }
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
         if (_cardDragging && _cardDown >= 0 && _openCells[_cardDown].layout is { } lifted)
@@ -1556,7 +1537,6 @@ public class EditorForm : Form
             {
                 // Drop marker: a bar at the slot the dragged card would land in.
                 int slot = _cardTarget;
-                if (slot == 1 && _lib.MainFor(_setKey, _mon.Key) == _openCells[1].layout?.Id) slot = 2; // main stays first
                 slot = Math.Min(slot, _openStrip + 1);
                 Rectangle t = slot <= _openStrip ? _openCells[slot].cell : _openCells[_openStrip].cell;
                 int bx = slot <= _openStrip ? t.X - S(9) : t.Right + S(6);

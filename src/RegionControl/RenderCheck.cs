@@ -38,7 +38,7 @@ public static class RenderCheck
             using (var strip = new StripForm())
             {
                 var layouts = lib.StripFor(mon.Key, key);
-                strip.Place(mon, layouts, lib.MainFor(key, mon.Key), show: false);
+                strip.Place(mon, layouts, null, show: false);
                 strip.SetActiveForRender(1, 1);
                 zones.ShowLayout(layouts[1], mon.Work, 1, show: false);
                 zones.SetHoverForRender(1);
@@ -173,7 +173,7 @@ public static class RenderCheck
         using (var strip = new StripForm())
         {
             var sw = Stopwatch.StartNew();
-            strip.Place(mon, layouts, lib.MainFor(key, mon.Key), show: false);
+            strip.Place(mon, layouts, null, show: false);
             double place = sw.Elapsed.TotalMilliseconds;
             res.Add($"  strip place (layout, blur of backdrop from the sample image): {place:0.0}");
             res.Add($"  strip paint: {Median(() => strip.TimePaint()):0.0}");
@@ -330,7 +330,7 @@ public static class RenderCheck
         using (var strip = new StripForm())
         {
             var layouts = lib.StripFor(mon.Key, key);
-            strip.Place(mon, layouts, lib.MainFor(key, mon.Key), show: false);
+            strip.Place(mon, layouts, null, show: false);
             strip.SetActiveForRender(1, 0);
             zones.ShowLayout(layouts[1], mon.Work, 2, show: false);
             zones.SetHoverForRender(0);

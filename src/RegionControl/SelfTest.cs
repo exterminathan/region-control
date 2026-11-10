@@ -103,6 +103,18 @@ public static class SelfTest
         Eq(fixedLib.Data.Layouts[0].Grid.Cols, 12, "hand edit: bad grid reset");
         Eq(fixedLib.Data.Monitors[0].Layouts.Count, 1, "hand edit: missing layout dropped from strip");
         Eq(fixedLib.Data.Sets[0].Main.Count, 0, "hand edit: missing main dropped");
+
+        // Old file: a main layout that is not in its monitor's strip list must not vanish.
+        File.WriteAllText(path, """
+        { "version": 1,
+          "layouts": [ { "id": "a", "name": "A", "zones": [ { "x": 0, "y": 0, "w": 50, "h": 100 } ] },
+                       { "id": "b", "name": "B", "zones": [ { "x": 50, "y": 0, "w": 50, "h": 100 } ] } ],
+          "monitors": [ { "key": "M@1x1", "layouts": [ "b" ] } ],
+          "sets": [ { "key": "M@1x1", "main": { "M@1x1": "a" } } ] }
+        """);
+        var oldLib = Library.Load(path);
+        Eq(string.Join(",", oldLib.StripFor("M@1x1", "M@1x1").Select(l => l.Id)), "a,b", "old main layout stays in the strip, in its old place");
+        Eq(oldLib.Data.Sets[0].Main.Count, 1, "old main field is kept in the file");
     }
 
     // ---------- zone modes, mixed DPI, ultrawide ----------
@@ -232,6 +244,17 @@ public static class SelfTest
         // Pixel zones save as whole pixels; minimum size refuses tiny splits.
         var p = new EditorModel(1366, 720) { MinPx = 32, NewMode = ZoneMode.Pixels };
         p.NewBlank();
+        Eq(p.Zones.Count, 0, "blank layout has zero zones");
+        Eq(p.HitZone(0.5, 0.5), -1, "blank: hit test finds nothing");
+        Check(p.FindDivider(0.5, 0.5, true, 6) == null, "blank: no divider");
+        p.Delete(0); p.Duplicate(0); p.SetMode(0, ZoneMode.Grid);
+        Check(!p.Split(0, true, 0.5), "blank: split does nothing");
+        Check(p.ToLayout().Zones.Count == 0, "blank: converts to a layout with no zones");
+        _ = p.Dirty; _ = p.Signature();
+        Check(p.Undo() && p.Zones.Count == 1, "blank: undo goes back");
+        Check(p.Redo() && p.Zones.Count == 0, "blank: redo returns to empty");
+        Check(p.AddZone(0, 0, 1, 1) == 0, "blank: draw adds the first zone");
+        Eq(p.Zones.Count, 1, "blank: one zone after drawing");
         p.Split(0, true, 683.0 / 1366);
         var pl = p.ToLayout();
         Eq(pl.Zones[0].Mode, ZoneMode.Pixels, "pixel mode saved");
@@ -277,7 +300,7 @@ public static class SelfTest
         string kAlone = Monitors.SetupKey(alone);
         Eq(lib.Set(kAlone)?.Name, "Laptop alone", "auto set name for the laptop");
         Eq(lib.StripFor(laptop.Key, kAlone).Count, 3, "new monitor gets the seed layouts");
-        Eq(lib.MainFor(kAlone, laptop.Key), "seed-70-30", "main defaults to the first strip layout");
+        Eq(lib.StripFor(laptop.Key, kAlone)[0].Id, "seed-70-30", "strip starts in seed order");
 
         // Desk: laptop plus two identical external monitors.
         var desk = new List<MonitorInfo> { dellB, laptop, dellA };
@@ -301,51 +324,49 @@ public static class SelfTest
         Check(lib.StripFor(dellA.Key, kDesk).Any(x => x.Id == "c1"), "shared to monitor A");
         Check(!lib.StripFor(dellB.Key, kDesk).Any(x => x.Id == "c1"), "still not on monitor B");
 
-        // Sets: the main layout is per setup. Desk main for the laptop does not change laptop alone.
-        lib.SetMain(kDesk, laptop.Key, "c1");
-        Eq(lib.StripFor(laptop.Key, kDesk)[0].Id, "c1", "desk set: custom layout first on the laptop");
-        Eq(lib.StripFor(laptop.Key, kAlone)[0].Id, "seed-70-30", "laptop alone set: unchanged");
-        lib.SetMain(kDesk, dellB.Key, "c1");
-        Check(lib.IsShown("c1", dellB.Key), "making a layout main also shows it on that monitor");
-        lib.SetMain(kDesk, dellB.Key, null);
-        Check(lib.MainFor(kDesk, dellB.Key) == null, "main can be cleared");
-        Check(lib.StripFor(dellB.Key, kDesk).Count > 0, "strip still has layouts after clearing main");
-
-        // Strip order: ReorderStrip. Laptop strip on the desk set is c1 (main), then the seeds.
+        // Strip order: SetStripOrder writes exactly the ids shown. No pinned layout.
+        lib.SetShown("c1", laptop.Key, false);
+        lib.SetStripOrder(laptop.Key, new[] { "c1", "seed-70-30", "seed-25-50-25", "seed-floating-30" });
         var stripAtStart = lib.Monitor(laptop.Key)!.Layouts.ToList();
-        string[] Ids() => lib.StripFor(laptop.Key, kDesk).Select(x => x.Id).ToArray();
-        string Order() => string.Join(",", Ids());
-        Eq(Order(), "c1,seed-70-30,seed-25-50-25,seed-floating-30", "strip order: main first, then list order");
-        Eq(lib.ReorderStrip("seed-floating-30", laptop.Key, 2, kDesk, out bool blk), StripMove.Moved, "reorder moves a layout earlier");
-        Eq(Order(), "c1,seed-70-30,seed-floating-30,seed-25-50-25", "earlier lands at the asked index");
-        Check(!blk, "a normal move is not blocked by main");
-        Eq(lib.ReorderStrip("seed-70-30", laptop.Key, 3, kDesk, out _), StripMove.Moved, "reorder moves a layout later");
-        Eq(Order(), "c1,seed-floating-30,seed-25-50-25,seed-70-30", "later lands at the asked index");
-        Eq(lib.ReorderStrip("seed-70-30", laptop.Key, 3, kDesk, out _), StripMove.Unchanged, "same index changes nothing");
-        Eq(lib.ReorderStrip("seed-70-30", laptop.Key, 99, kDesk, out _), StripMove.Unchanged, "index past the end clamps to last");
-        Eq(lib.ReorderStrip("seed-floating-30", laptop.Key, 99, kDesk, out _), StripMove.Moved, "index past the end moves to last");
-        Eq(Order(), "c1,seed-25-50-25,seed-70-30,seed-floating-30", "past the end lands last");
-        Eq(lib.ReorderStrip("seed-floating-30", laptop.Key, 0, kDesk, out blk), StripMove.Moved, "a drop before main still moves");
-        Check(blk, "a drop before main reports blockedByMain");
-        Eq(Order(), "c1,seed-floating-30,seed-25-50-25,seed-70-30", "a drop before main lands right behind it");
-        Eq(lib.ReorderStrip("seed-floating-30", laptop.Key, -4, kDesk, out blk), StripMove.Unchanged, "negative index behind main changes nothing");
-        Check(blk, "negative index reports blockedByMain");
-        Eq(lib.ReorderStrip("c1", laptop.Key, 3, kDesk, out _), StripMove.PinnedMain, "main layout cannot be moved");
-        Eq(Ids()[0], "c1", "main stays first");
-        Eq(lib.ReorderStrip("nope", laptop.Key, 1, kDesk, out _), StripMove.NotFound, "unknown layout id");
-        Eq(Order(), "c1,seed-floating-30,seed-25-50-25,seed-70-30", "failed moves leave the order alone");
+        string Order() => string.Join(",", lib.StripFor(laptop.Key, kDesk).Select(x => x.Id));
+        // Same helper the editor uses: take the shown ids, remove the card, insert it at a final index.
+        void Put(string id, int index) { var ids = lib.StripFor(laptop.Key, kDesk).Select(x => x.Id).ToList(); ids.Remove(id); ids.Insert(Math.Clamp(index, 0, ids.Count), id); lib.SetStripOrder(laptop.Key, ids); }
+        Eq(Order(), "c1,seed-70-30,seed-25-50-25,seed-floating-30", "strip order is the list order");
+        Put("seed-floating-30", 0);
+        Eq(Order(), "seed-floating-30,c1,seed-70-30,seed-25-50-25", "any card can land 1st, even before the old main");
+        Put("seed-25-50-25", 1);
+        Eq(Order(), "seed-floating-30,seed-25-50-25,c1,seed-70-30", "any card can land 2nd");
+        Put("seed-floating-30", 2);
+        Eq(Order(), "seed-25-50-25,c1,seed-floating-30,seed-70-30", "2nd-to-last, moving later");
+        Put("seed-25-50-25", 2);
+        Eq(Order(), "c1,seed-floating-30,seed-25-50-25,seed-70-30", "2nd-to-last, moving later (first card)");
+        Put("seed-70-30", 2);
+        Eq(Order(), "c1,seed-floating-30,seed-70-30,seed-25-50-25", "2nd-to-last, moving earlier");
+        Put("c1", 99);
+        Eq(Order(), "seed-floating-30,seed-70-30,seed-25-50-25,c1", "any card can land last");
+        Put("c1", 0);
+        Eq(Order(), "c1,seed-floating-30,seed-70-30,seed-25-50-25", "last card can land first");
+        Check(!lib.SetStripOrder(laptop.Key, new[] { "c1", "seed-floating-30", "seed-70-30", "seed-25-50-25" }), "same order reports no change");
+        // From outside the strip: a card that is not on this monitor yet.
+        lib.SetStripOrder(dellB.Key, new[] { "seed-70-30", "seed-25-50-25", "seed-floating-30" });
+        Check(!lib.IsShown("c1", dellB.Key), "c1 starts outside the strip of monitor B");
+        string OrderB() => string.Join(",", lib.StripFor(dellB.Key, kDesk).Select(x => x.Id));
+        void PutB(string id, int index) { var ids = lib.StripFor(dellB.Key, kDesk).Select(x => x.Id).ToList(); ids.Remove(id); ids.Insert(Math.Clamp(index, 0, ids.Count), id); lib.SetStripOrder(dellB.Key, ids); }
+        PutB("c1", 0); Eq(OrderB(), "c1,seed-70-30,seed-25-50-25,seed-floating-30", "from outside: lands 1st");
         lib.SetShown("c1", dellB.Key, false);
-        Eq(lib.ReorderStrip("c1", dellB.Key, 1, kDesk, out _), StripMove.Added, "a layout not in the strip is added");
-        Eq(lib.Monitor(dellB.Key)!.Layouts[1], "c1", "added layout sits at the asked index");
+        PutB("c1", 1); Eq(OrderB(), "seed-70-30,c1,seed-25-50-25,seed-floating-30", "from outside: lands 2nd");
         lib.SetShown("c1", dellB.Key, false);
-        Eq(lib.ReorderStrip("seed-70-30", "new-monitor", 0, kDesk, out _), StripMove.Added, "unknown monitor key gets an entry");
-        Eq(lib.Monitor("new-monitor")!.Layouts[0], "seed-70-30", "new entry holds the layout");
+        PutB("c1", 2); Eq(OrderB(), "seed-70-30,seed-25-50-25,c1,seed-floating-30", "from outside: lands 2nd-to-last");
+        lib.SetShown("c1", dellB.Key, false);
+        PutB("c1", 99); Eq(OrderB(), "seed-70-30,seed-25-50-25,seed-floating-30,c1", "from outside: lands last");
+        lib.SetShown("c1", dellB.Key, false);
+        lib.SetStripOrder(dellB.Key, new[] { "seed-70-30", "nope", "seed-70-30", "seed-25-50-25", "seed-floating-30" });
+        Eq(OrderB(), "seed-70-30,seed-25-50-25,seed-floating-30", "unknown and repeated ids are dropped");
+        lib.SetStripOrder("new-monitor", new[] { "seed-70-30" });
+        Eq(lib.Monitor("new-monitor")!.Layouts[0], "seed-70-30", "unknown monitor key gets an entry");
         lib.Data.Monitors.RemoveAll(m => m.Key == "new-monitor");
-        // Without a set, nothing is pinned.
-        Eq(lib.ReorderStrip("seed-70-30", laptop.Key, 0, null, out blk), StripMove.Moved, "no set: moves to the front");
-        Check(!blk, "no set: never blocked");
-        Eq(lib.Monitor(laptop.Key)!.Layouts[0], "seed-70-30", "no set: layout is first in the list");
-        lib.Monitor(laptop.Key)!.Layouts = stripAtStart; // restore the order the later checks expect
+        Check(lib.MainFor(kDesk, laptop.Key) == null, "no main layout any more");
+        lib.Monitor(laptop.Key)!.Layouts = new List<string> { "c1", "seed-70-30", "seed-25-50-25", "seed-floating-30" }; // order the later checks expect
 
         // Ultrawide at the desk instead: a new setup; a new monitor gets the seeds.
         var uw = new List<MonitorInfo> { laptop, ultra };
@@ -354,7 +375,6 @@ public static class SelfTest
         string kUw = Monitors.SetupKey(uw);
         Check(ultra.Ultrawide && ultra.Label.Contains("ultrawide"), "ultrawide is detected");
         Eq(lib.StripFor(ultra.Key, kUw).Count, 3, "ultrawide gets the seeds");
-        Eq(lib.MainFor(kUw, laptop.Key), "seed-70-30", "new setup: laptop main comes from the first set that has one");
 
         // The same monitor at another resolution: a new key that copies the strip.
         var dellLow = Mon("DELA0C3#5&2&UID2", 1920, 1920, 1080);
@@ -371,7 +391,7 @@ public static class SelfTest
         // Save, reload, delete.
         lib.Save();
         var re = Library.Load(lib.Path);
-        Eq(re.MainFor(kDesk, laptop.Key), "c1", "sets survive a reload");
+        Eq(re.StripFor(laptop.Key, kDesk)[0].Id, "c1", "strip order survives a reload");
         Check(re.IsShown("c1", dellA.Key), "sharing survives a reload");
         re.Delete("c1");
         Check(re.Find("c1") == null, "delete removes the layout");

@@ -111,9 +111,9 @@ public class MonitorEntry
 }
 
 /// <summary>Result of Library.ReorderStrip.</summary>
-public enum StripMove { Moved, Added, Unchanged, PinnedMain, NotFound }
+public enum StripMove { Moved, Added, Unchanged, NotFound }
 
-/// <summary>A set: one main layout per monitor, for one monitor setup.</summary>
+/// <summary>A set: one monitor setup. Main is an old field: kept in the file for compatibility, ignored.</summary>
 public class LayoutSet
 {
     public string Key { get; set; } = "";     // setup key: sorted monitor keys joined by "|"
@@ -242,6 +242,12 @@ public class Library
         {
             s.Main ??= new();
             foreach (var k in s.Main.Where(kv => !have.Contains(kv.Value)).Select(kv => kv.Key).ToList()) { s.Main.Remove(k); fixes++; }
+            // Old files: a main layout showed first even if it was not in the strip list. Put it in, first, so it does not vanish.
+            foreach (var kv in s.Main)
+            {
+                var me = Data.Monitors.FirstOrDefault(m => m.Key == kv.Key);
+                if (me != null && !me.Layouts.Contains(kv.Value)) me.Layouts.Insert(0, kv.Value);
+            }
         }
         return fixes;
     }
@@ -274,14 +280,6 @@ public class Library
             Data.Sets.Add(set);
             changed = true;
         }
-        foreach (var m in mons)
-        {
-            if (set.Main.ContainsKey(m.Key)) continue;
-            // The main layout this monitor has in another set, else the first of its strip.
-            string? main = Data.Sets.Where(s => s != set).Select(s => s.Main.GetValueOrDefault(m.Key)).FirstOrDefault(id => Find(id) != null)
-                ?? Monitor(m.Key)!.Layouts.FirstOrDefault();
-            if (main != null) { set.Main[m.Key] = main; changed = true; }
-        }
         return changed;
     }
 
@@ -304,20 +302,13 @@ public class Library
         return $"{mons.Count} monitors: " + string.Join(" + ", mons.Select(m => m.Label));
     }
 
-    public string? MainFor(string setupKey, string monitorKey)
-    {
-        var id = Set(setupKey)?.Main.GetValueOrDefault(monitorKey);
-        return Find(id) != null ? id : null;
-    }
+    /// <summary>Old "main layout" concept: gone. Always null. Kept so older callers compile.</summary>
+    public string? MainFor(string setupKey, string monitorKey) => null;
 
-    /// <summary>Layouts for a monitor's picker strip: the set's main layout first, then the strip order.</summary>
+    /// <summary>Layouts for a monitor's picker strip, exactly in the monitor's strip order.</summary>
     public List<ZoneLayout> StripFor(string monitorKey, string setupKey)
     {
-        var ids = new List<string>();
-        var main = MainFor(setupKey, monitorKey);
-        if (main != null) ids.Add(main);
-        foreach (var id in Monitor(monitorKey)?.Layouts ?? new()) if (!ids.Contains(id)) ids.Add(id);
-        var list = ids.Select(Find).Where(l => l != null).Select(l => l!).ToList();
+        var list = (Monitor(monitorKey)?.Layouts ?? new()).Select(Find).Where(l => l != null).Select(l => l!).ToList();
         return list.Count > 0 ? list : Data.Layouts.ToList(); // never an empty picker
     }
 
@@ -338,45 +329,17 @@ public class Library
     }
 
     /// <summary>
-    /// Put a layout at a place in a monitor's strip (newIndex is its final position, 0 = first).
-    /// A layout not in the strip is added. With a setup key, the set's main layout stays pinned
-    /// first: a drop before it lands right behind it, and blockedByMain is true.
-    /// Saves the new order into the strip list (main first). Call Save after it.
+    /// Set a monitor's strip to exactly these layout ids, in this order. Unknown and repeated ids are dropped.
+    /// Returns false when the order is the same as the strip now. Call Save after it.
     /// </summary>
-    public StripMove ReorderStrip(string layoutId, string monitorKey, int newIndex, string? setupKey, out bool blockedByMain)
+    public bool SetStripOrder(string monitorKey, IEnumerable<string> orderedIds)
     {
-        blockedByMain = false;
-        if (Find(layoutId) == null) return StripMove.NotFound;
-        string? main = setupKey == null ? null : MainFor(setupKey, monitorKey);
-        if (layoutId == main) return StripMove.PinnedMain;
+        var order = orderedIds.Where(id => Find(id) != null).Distinct().ToList();
         var e = Monitor(monitorKey);
-        bool added = e == null || !e.Layouts.Contains(layoutId);
-        var order = e?.Layouts.ToList() ?? new List<string>();
-        if (main != null && order.Remove(main)) order.Insert(0, main);
-        int floor = main != null && order.Contains(main) ? 1 : 0;
-        if (newIndex < floor) { blockedByMain = floor == 1; newIndex = floor; }
-        int from = order.IndexOf(layoutId);
-        if (from >= 0) order.RemoveAt(from);
-        int to = Math.Clamp(newIndex, floor, order.Count);
-        if (!added && from == to) return StripMove.Unchanged;
-        order.Insert(to, layoutId);
         if (e == null) { e = new MonitorEntry { Key = monitorKey }; Data.Monitors.Add(e); }
+        else if (e.Layouts.SequenceEqual(order)) return false;
         e.Layouts = order;
-        return added ? StripMove.Added : StripMove.Moved;
-    }
-
-    /// <summary>Set or clear the main layout of a monitor in a set. Setting it also shows it in the strip.</summary>
-    public void SetMain(string setupKey, string monitorKey, string? layoutId, string setName = "")
-    {
-        var set = Set(setupKey);
-        if (set == null)
-        {
-            if (layoutId == null) return;
-            set = new LayoutSet { Key = setupKey, Name = setName };
-            Data.Sets.Add(set);
-        }
-        if (layoutId == null) set.Main.Remove(monitorKey);
-        else { set.Main[monitorKey] = layoutId; SetShown(layoutId, monitorKey, true); }
+        return true;
     }
 
     public void Upsert(ZoneLayout layout)

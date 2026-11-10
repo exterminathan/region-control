@@ -129,7 +129,7 @@ public class EditorModel
     public void NewBlank()
     {
         Push();
-        Zones = new() { Full(NewMode) };
+        Zones = new();
         LayoutId = null; Name = "New layout";
     }
 
