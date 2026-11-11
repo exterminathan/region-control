@@ -253,7 +253,7 @@ public partial class DragWatcher : ApplicationContext
         {
             t.Stop(); t.Dispose();
             Snap(hwnd, target, name); SnapFlash.Show(target, scale);
-            if (snapMon != null) BeginAssist(hwnd, layout, snapZone, snapMon);
+            if (snapMon != null) { _lastLayout[snapMon.Key] = layout.Id; BeginAssist(hwnd, layout, snapZone, snapMon); }
         };
         t.Start();
     }

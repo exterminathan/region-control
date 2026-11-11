@@ -39,10 +39,30 @@ public static class SelfTest
         Eq(EdgeMath.PickZone(stack, work, -1, 1200), 0, "left edge: the full-height left zone");
 
         // A floating zone away from both edges is still the nearest choice.
-        var floating = new ZoneLayout { Name = "float" };
+        var floating = new ZoneLayout { Id = "float", Name = "float" };
         floating.Zones.Add(new Zone { X = 35, Y = 20, W = 30, H = 60 });
         Eq(EdgeMath.PickZone(floating, work, -1, 700), 0, "floating zone: nearest zone is used");
         Eq(EdgeMath.PickZone(new ZoneLayout(), work, -1, 700), -1, "layout with no zones: nothing to pick");
+
+        // Nate's case: 1 x 4 with two windows already in the middle columns, drag to the right edge.
+        var work2 = work;
+        var frames = new List<RECT> { cols.ZoneRect(1, work2), cols.ZoneRect(2, work2) };
+        var seeds = new List<ZoneLayout> { stack, cols, floating };
+        var cur = EdgeMath.CurrentLayout(seeds, work2, frames, 16, null);
+        Eq(cur?.Name, "cols", "layout in use: the one whose zones match the open windows, not the first in the strip");
+        Eq(EdgeMath.PickZone(cur!, work2, 1, 700, i => frames.Any(f => EdgeMath.Covers(f, cur!.ZoneRect(i, work2)))), 3, "right edge takes the free right column");
+        Eq(EdgeMath.PickZone(cur!, work2, -1, 700, i => frames.Any(f => EdgeMath.Covers(f, cur!.ZoneRect(i, work2)))), 0, "left edge takes the free left column");
+
+        // A window already in the edge zone: the edge drop does not take it.
+        var full = new List<RECT> { cols.ZoneRect(3, work2) };
+        Eq(EdgeMath.PickZone(cols, work2, 1, 700, i => full.Any(f => EdgeMath.Covers(f, cols.ZoneRect(i, work2)))), 2, "edge zone taken: next free zone, never the taken one");
+        Eq(EdgeMath.PickZone(cols, work2, 1, 700, _ => true), -1, "every zone taken: nothing is picked");
+
+        // No window matches any layout: the last used layout wins, else the first.
+        Eq(EdgeMath.CurrentLayout(seeds, work2, new List<RECT>(), 16, "float")?.Name, "float", "no match: last used layout");
+        Eq(EdgeMath.CurrentLayout(seeds, work2, new List<RECT>(), 16, null)?.Name, "stack", "no match and no history: first layout");
+        Check(EdgeMath.Covers(new RECT(0, 0, 860, 1400), new RECT(0, 0, 860, 1400)), "a window on a zone covers it");
+        Check(!EdgeMath.Covers(new RECT(0, 0, 400, 1400), new RECT(0, 0, 860, 1400)), "a narrow window does not cover a zone");
 
         // Overlapping layout: a small zone on the edge beats a big one that does not touch it.
         var over = new ZoneLayout { Name = "over" };
