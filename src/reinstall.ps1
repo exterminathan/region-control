@@ -23,7 +23,9 @@ if ($p.ExitCode -ne 0) { throw "Installer exit code $($p.ExitCode). Log: $log" }
 
 # Find the installed exe (per-user default, then per-machine).
 $candidates = @(
+  (Join-Path $env:LOCALAPPDATA 'Programs\Snap Layouts\RegionControl.exe'),
   (Join-Path $env:LOCALAPPDATA 'Programs\Region Control\RegionControl.exe'),
+  (Join-Path $env:ProgramFiles 'Snap Layouts\RegionControl.exe'),
   (Join-Path $env:ProgramFiles 'Region Control\RegionControl.exe'))
 $exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $exe) { throw "Installed exe not found. Log: $log" }

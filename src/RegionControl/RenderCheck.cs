@@ -442,7 +442,7 @@ public static class RenderCheck
         int icon = wide ? 132 : 124;
         using var nameFont = Theme.DisplayFont(wide ? 70 : 76, true);
         using var tagFont = Theme.UiFont(wide ? 28 : 30);
-        var nameSz = g.MeasureString("Region Control", nameFont, PointF.Empty, StringFormat.GenericTypographic);
+        var nameSz = g.MeasureString("Snap Layouts", nameFont, PointF.Empty, StringFormat.GenericTypographic);
         var tagSz = g.MeasureString("Custom snap layouts for Windows 11", tagFont, PointF.Empty, StringFormat.GenericTypographic);
         float gap = 30;
         float rowW = icon + gap + nameSz.Width;
@@ -453,7 +453,7 @@ public static class RenderCheck
         using var white = new SolidBrush(Theme.Text);
         using var dim = new SolidBrush(Theme.A(Theme.Text, 0.72));
         float nx = bx + icon + gap;
-        g.DrawString("Region Control", nameFont, white, nx, by + (icon - nameSz.Height) / 2f - 4, StringFormat.GenericTypographic);
+        g.DrawString("Snap Layouts", nameFont, white, nx, by + (icon - nameSz.Height) / 2f - 4, StringFormat.GenericTypographic);
         if (wide) g.DrawString("Custom snap layouts for Windows 11", tagFont, dim, bx + 6, by + icon + 26, StringFormat.GenericTypographic);
         else g.DrawString("Custom snap layouts for Windows 11", tagFont, dim, (w - tagSz.Width) / 2f, by + icon + 28, StringFormat.GenericTypographic);
 

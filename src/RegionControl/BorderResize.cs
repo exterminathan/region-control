@@ -59,7 +59,7 @@ public static class BorderMath
 
 /// <summary>
 /// Dragging a border between snapped windows moves it for all of them, as Windows does for snap groups.
-/// Only windows that Region Control snapped take part. A border drag with no such neighbour is an ordinary resize.
+/// Only windows that Snap Layouts snapped take part. A border drag with no such neighbour is an ordinary resize.
 /// </summary>
 public partial class DragWatcher
 {

@@ -10,7 +10,7 @@ $args = @('publish', (Join-Path $PSScriptRoot 'RegionControl/RegionControl.cspro
   '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true',
   '-p:PublishSingleFile=true', '-p:IncludeNativeLibrariesForSelfExtract=true',
   '-p:EnableCompressionInSingleFile=true', '-p:DebugType=none', '-p:DebugSymbols=false',
-  "-p:Version=$version", '-p:Company=inNATE Tools', '-p:Product=Region Control', '-p:Copyright=Copyright (c) 2026 inNATE Tools', '-o', $out)
+  "-p:Version=$version", '-p:Company=inNATE Tools', '-p:Product=Snap Layouts', '-p:Copyright=Copyright (c) 2026 inNATE Tools', '-o', $out)
 # Trim tried: NETSDK1175 refuses WinForms with trimming (SDK 10.0.302). -Trim stays only to re-test later.
 if ($Trim) { $args += @('-p:PublishTrimmed=true', '-p:TrimMode=partial') }
 & dotnet @args

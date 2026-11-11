@@ -23,7 +23,7 @@ function Round-Rect($x, $y, $w, $h, $r) {
     $p.AddArc($x, $y, $d, $d, 180, 90); $p.AddArc($x + $w - $d, $y, $d, $d, 270, 90)
     $p.AddArc($x + $w - $d, $y + $h - $d, $d, $d, 0, 90); $p.AddArc($x, $y + $h - $d, $d, $d, 90, 90); $p.CloseFigure(); return $p
 }
-# Draws a few glass zone panels: the Region Control idea in one picture.
+# Draws a few glass zone panels: the Snap Layouts idea in one picture.
 function Draw-Zones($g, $x, $y, $w, $h, $s) {
     $gap = 8 * $s; $r = 10 * $s
     $cells = @(@(0, 0, 0.58, 1.0, 0), @(0.58, 0, 0.42, 0.55, 1), @(0.58, 0.55, 0.42, 0.45, 0))
@@ -53,7 +53,7 @@ foreach ($sz in @(@(164, 314, 1.0, 'wizard-164.bmp'), @(246, 459, 1.5, 'wizard-2
     Draw-Icon $g ([int](($w - 48 * $s) / 2)) ([int](28 * $s)) ([int](48 * $s))
     $font = New-Object Drawing.Font 'Segoe UI Semibold', (11 * $s), ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
     $sf = New-Object Drawing.StringFormat; $sf.Alignment = 'Center'
-    $g.DrawString('Region Control', $font, [Drawing.Brushes]::White, [Drawing.RectangleF]::new(0, 262 * $s, $w, 20 * $s), $sf)
+    $g.DrawString('Snap Layouts', $font, [Drawing.Brushes]::White, [Drawing.RectangleF]::new(0, 262 * $s, $w, 20 * $s), $sf)
     $font2 = New-Object Drawing.Font 'Segoe UI', (9 * $s), ([Drawing.FontStyle]::Regular), ([Drawing.GraphicsUnit]::Pixel)
     $g.DrawString('inNATE Tools', $font2, (New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(150, 200, 230))), [Drawing.RectangleF]::new(0, 282 * $s, $w, 16 * $s), $sf)
     Save $bmp $g $sz[3]

@@ -5,7 +5,7 @@ public partial class DragWatcher
 {
     NotifyIcon CreateTray()
     {
-        var tray = new NotifyIcon { Icon = Icons.TrayIcon(), Text = "Region Control", Visible = true, ContextMenuStrip = new ContextMenuStrip() };
+        var tray = new NotifyIcon { Icon = Icons.TrayIcon(), Text = "Snap Layouts", Visible = true, ContextMenuStrip = new ContextMenuStrip() };
         tray.ContextMenuStrip!.Opening += (_, e) => { BuildTrayMenu(); e.Cancel = false; };
         tray.MouseDoubleClick += (_, e) => { if (e.Button == MouseButtons.Left) OpenEditor(null); };
         return tray;
@@ -52,16 +52,16 @@ public partial class DragWatcher
         Item("Logs folder", "Open the folder with the daily log files.", () =>
             System.Diagnostics.Process.Start("explorer.exe", $"\"{LogDir}\""));
         menu.Items.Add(new ToolStripSeparator());
-        var auto = Item("Start with Windows", "Start Region Control when you sign in.", null);
+        var auto = Item("Start with Windows", "Start Snap Layouts when you sign in.", null);
         auto.Checked = autostart;
         auto.Click += (_, _) => app?.ToggleAutostart(!auto.Checked);
         menu.Items.Add(new ToolStripSeparator());
-        Item("About", $"Region Control {AppVersion}", () => app?.ShowAbout());
-        Item("Quit", "Quit Region Control.", () => app?.Quit());
+        Item("About", $"Snap Layouts {AppVersion}", () => app?.ShowAbout());
+        Item("Quit", "Quit Snap Layouts.", () => app?.Quit());
     }
 
     void ShowAbout() =>
-        _tray.ShowBalloonTip(4000, $"Region Control {AppVersion}", "Drag a window to the top edge to pick a zone.", ToolTipIcon.Info);
+        _tray.ShowBalloonTip(4000, $"Snap Layouts {AppVersion}", "Drag a window to the top edge to pick a zone.", ToolTipIcon.Info);
 
     /// <summary>Version from -p:Version=x.y.z at build time (InformationalVersion, without the +commit suffix).</summary>
     static string AppVersion
@@ -82,7 +82,7 @@ public partial class DragWatcher
         if (err != null)
         {
             Log($"start with Windows: failed to {(on ? "enable" : "disable")}: {err}");
-            _tray.ShowBalloonTip(4000, "Region Control", "Start with Windows failed. See the log.", ToolTipIcon.Warning);
+            _tray.ShowBalloonTip(4000, "Snap Layouts", "Start with Windows failed. See the log.", ToolTipIcon.Warning);
             return;
         }
         Log($"start with Windows: {(on ? "on" : "off")}");
@@ -90,7 +90,7 @@ public partial class DragWatcher
 
     /// <summary>Called when a second copy starts and exits: tell the user the app is already here.</summary>
     public void ShowAlreadyRunning() =>
-        _tray.ShowBalloonTip(3000, "Region Control", "Already running. Right-click the tray icon.", ToolTipIcon.Info);
+        _tray.ShowBalloonTip(3000, "Snap Layouts", "Already running. Right-click the tray icon.", ToolTipIcon.Info);
 
     /// <summary>Clean exit: close the editor, then stop the message loop. Dispose removes the hook, overlays and tray icon.</summary>
     public void Quit()

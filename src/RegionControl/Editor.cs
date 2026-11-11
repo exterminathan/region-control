@@ -95,7 +95,7 @@ public class EditorForm : Form
         KeyPreview = true;
         DoubleBuffered = true;
         BackColor = Theme.EditorSolid;
-        Text = "Region Control layout editor";
+        Text = "Snap Layouts editor";
         try { Icon = Icons.AppIcon(32); } catch { }
         Location = new Point(mon.Work.Left, mon.Work.Top);
         Size = new Size(mon.Work.Width, mon.Work.Height);

@@ -1,4 +1,4 @@
-; Region Control installer. Build with src/build-installer.ps1 (passes /DAppVersion=<installer/version.txt>).
+; Snap Layouts installer. Build with src/build-installer.ps1 (passes /DAppVersion=<installer/version.txt>).
 #ifndef AppVersion
   #define AppVersion "0.0.0"
 #endif
@@ -9,14 +9,14 @@
 [Setup]
 ; Fixed AppId: never change it, or upgrades will install side by side.
 AppId={{6F1D2B7E-3C54-4E0A-9B6A-5D2C8A41E7F3}
-AppName=Region Control
+AppName=Snap Layouts
 AppVersion={#AppVersion}
-AppVerName=Region Control {#AppVersion}
+AppVerName=Snap Layouts {#AppVersion}
 AppPublisher=inNATE Tools
 AppCopyright=Copyright (c) 2026 inNATE Tools
-; Per-user default is %LOCALAPPDATA%\Programs\Region Control ({autopf} under lowest privileges).
-DefaultDirName={autopf}\Region Control
-DefaultGroupName=Region Control
+; Per-user default is %LOCALAPPDATA%\Programs\Snap Layouts ({autopf} under lowest privileges).
+DefaultDirName={autopf}\Snap Layouts
+DefaultGroupName=Snap Layouts
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
@@ -28,13 +28,13 @@ WizardSmallImageFile=assets\small-55.bmp,assets\small-110.bmp
 WizardStyle=modern dynamic
 VersionInfoCompany=inNATE Tools
 VersionInfoCopyright=Copyright (c) 2026 inNATE Tools
-VersionInfoProductName=Region Control
-VersionInfoDescription=Region Control Setup
+VersionInfoProductName=Snap Layouts
+VersionInfoDescription=Snap Layouts Setup
 OutputDir=..\dist
 OutputBaseFilename=RegionControl-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
-UninstallDisplayName=Region Control
+UninstallDisplayName=Snap Layouts
 UninstallDisplayIcon={app}\RegionControl.exe
 VersionInfoVersion={#AppVersion}
 AppMutex=Local\RegionControl.Single
@@ -53,9 +53,9 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
 Name: "desktopicon"; Description: "Create a &Desktop shortcut"; Flags: unchecked
-Name: "startup"; Description: "&Start Region Control with Windows"; Flags: unchecked
-; Windows' own snapping must be off for Region Control. Two choices, default = B. Nothing is applied unless A is chosen.
-Name: "snapauto"; Description: "Let Region Control turn off Windows' own snapping for me (keeps Win+Arrow)"; GroupDescription: "Windows' own snap-on-drag:"; Flags: exclusive unchecked
+Name: "startup"; Description: "&Start Snap Layouts with Windows"; Flags: unchecked
+; Windows' own snapping must be off for Snap Layouts. Two choices, default = B. Nothing is applied unless A is chosen.
+Name: "snapauto"; Description: "Let Snap Layouts turn off Windows' own snapping for me (keeps Win+Arrow)"; GroupDescription: "Windows' own snap-on-drag:"; Flags: exclusive unchecked
 Name: "snapmanual"; Description: "I will turn it off myself in Settings (steps on the last page)"; GroupDescription: "Windows' own snap-on-drag:"; Flags: exclusive
 ; The exact change for A appears on the "Ready to Install" page (UpdateReadyMemo). Steps for B: finish page (CurPageChanged).
 
@@ -63,9 +63,14 @@ Name: "snapmanual"; Description: "I will turn it off myself in Settings (steps o
 Source: "..\dist\portable\RegionControl.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "LICENSE.rtf"; DestDir: "{app}"; Flags: ignoreversion
 
+; Remove the shortcuts of the old name (before 0.1.2 the app was called Region Control).
+[InstallDelete]
+Type: files; Name: "{autoprograms}\Region Control.lnk"
+Type: files; Name: "{autodesktop}\Region Control.lnk"
+
 [Icons]
-Name: "{autoprograms}\Region Control"; Filename: "{app}\RegionControl.exe"
-Name: "{autodesktop}\Region Control"; Filename: "{app}\RegionControl.exe"; Tasks: desktopicon
+Name: "{autoprograms}\Snap Layouts"; Filename: "{app}\RegionControl.exe"
+Name: "{autodesktop}\Snap Layouts"; Filename: "{app}\RegionControl.exe"; Tasks: desktopicon
 
 [Registry]
 ; Same value the app's tray toggle writes (Startup.cs): HKCU Run, name RegionControl, quoted exe path.
@@ -73,7 +78,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [Run]
 ; Fresh install: ask. Upgrade of a running copy: restart it without asking.
-Filename: "{app}\RegionControl.exe"; Description: "Launch Region Control"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: not WasRunning
+Filename: "{app}\RegionControl.exe"; Description: "Launch Snap Layouts"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: not WasRunning
 Filename: "{app}\RegionControl.exe"; Flags: nowait runasoriginaluser; Check: WasRunning
 
 [UninstallRun]
@@ -210,7 +215,7 @@ begin
   end;
   if (CurUninstallStep = usPostUninstall) and DirExists(UserDataDir) and (not UninstallSilent) then
   begin
-    if MsgBox('Also delete your Region Control layouts and logs?' + #13#10 + UserDataDir + #13#10#13#10 +
+    if MsgBox('Also delete your Snap Layouts layouts and logs?' + #13#10 + UserDataDir + #13#10#13#10 +
               'Choose No to keep them (default).', mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES then
       DelTree(UserDataDir, True, True, True);
   end;
@@ -224,5 +229,5 @@ begin
       'One step left: turn off Windows'' own snapping.' + #13#10 +
       '1. Open Settings > System > Multitasking.' + #13#10 +
       '2. Turn off "Snap windows".' + #13#10 +
-      'This also turns off Win+Arrow. Region Control cannot work with the Windows snap bar on.';
+      'This also turns off Win+Arrow. Snap Layouts cannot work with the Windows snap bar on.';
 end;
