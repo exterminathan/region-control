@@ -129,6 +129,7 @@ public partial class DragWatcher : ApplicationContext
         var mon = _monitors.FirstOrDefault(m => m.Handle == hit.Handle) ?? hit;
         var layouts = Lib.StripFor(mon.Key, SetupKey);
         _zones.Hide();
+        _edgeLayout = null;
         _strip.Place(mon, layouts, Lib.MainFor(SetupKey, mon.Key));
         _mon = mon;
         _shown = true;
@@ -139,7 +140,7 @@ public partial class DragWatcher : ApplicationContext
     void Track()
     {
         if (_drag == IntPtr.Zero || _cancelled) return;
-        if (_shown)
+        if (_shown || _edgeLayout != null)
         {
             // Esc (swallowed by the hook while the picker is open) or a right-click cancels with no snap.
             bool esc = _esc.Pressed || (!_esc.Installed && (Native.GetAsyncKeyState(Native.VK_ESCAPE) & 0x8000) != 0);
@@ -160,6 +161,7 @@ public partial class DragWatcher : ApplicationContext
         bool atTop = p.Y <= mon.Bounds.Top + (int)Math.Round(6 * mon.Scale);
 
         if (atTop && (!_shown || mon.Key != _mon!.Key || mon.Handle != _mon.Handle)) ShowStrip(mon);
+        if (!_shown && EdgeTrack(p, mon, atTop)) return;
         if (!_shown) return;
         if (mon.Handle != _mon!.Handle) { HideOverlay(); return; } // moved to another monitor below its top edge
 
@@ -206,9 +208,10 @@ public partial class DragWatcher : ApplicationContext
         bool toEditor = _shown && !_cancelled && _strip.PillHover;
         ZoneLayout? source = toEditor ? _strip.EditSource : null;
         var editMon = _mon;
-        ZoneLayout? layout = _shown && _strip.Active >= 0 ? _strip.Layouts[_strip.Active] : null;
-        int zone = layout != null ? _strip.HoverZone : -1;
-        var work = _strip.Work;
+        bool edge = !_shown && !_cancelled && _edgeLayout != null;
+        ZoneLayout? layout = _shown && _strip.Active >= 0 ? _strip.Layouts[_strip.Active] : edge ? _edgeLayout : null;
+        int zone = layout != null ? (edge ? _zones.Hover : _strip.HoverZone) : -1;
+        var work = edge && _mon != null ? _mon.Work : _strip.Work;
         double scale = _mon?.Scale ?? 1;
         var origin = _origin;
         _drag = IntPtr.Zero;
@@ -258,6 +261,7 @@ public partial class DragWatcher : ApplicationContext
     void HideOverlay()
     {
         _shown = false;
+        _edgeLayout = null;
         _esc.Uninstall();
         _strip.Active = -1; _strip.HoverZone = -1;
         _strip.Hide();

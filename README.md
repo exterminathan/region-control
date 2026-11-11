@@ -60,6 +60,8 @@ If you use the portable exe, run `src/native-snap-off.ps1` from this repository 
 4. If the layout has more zones, a window picker opens in each empty zone in turn (left to right, bottom to top). Pick a window to snap it there, or choose **Skip this zone**. **Esc** ends the sequence.
 5. Press **Esc**, right-click, or drop outside every zone to cancel. Esc and right-click put the window back where the drag began.
 
+**Side edges:** drag a window to the left or right edge of a screen to show the first layout in the strip. The zone on that edge lights up. Drop to snap the window there. An edge that borders another screen does not count.
+
 To edit layouts, drop a window on the **Layout** pill, or right-click the tray icon and choose **Edit layouts**. In the editor, press **?** (or H or F1) for the shortcuts.
 
 In the editor, choose **Open** and drag a layout card to change the order of the picker strip. The **Blank** card starts an empty screen: draw your own zones.

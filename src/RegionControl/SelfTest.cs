@@ -20,6 +20,37 @@ public static class SelfTest
     static bool Same(RECT a, RECT b) => a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
     static void Rect(RECT actual, RECT expected, string what) => Check(Same(actual, expected), $"{what}: expected {expected}, got {actual}");
 
+    /// <summary>Side-edge drop: which zone belongs to the left or right edge.</summary>
+    static void Edges()
+    {
+        var work = new RECT(0, 0, 3440, 1400);
+        var cols = new ZoneLayout { Name = "cols" };
+        for (int i = 0; i < 4; i++) cols.Zones.Add(new Zone { X = i * 25, Y = 0, W = 25, H = 100 });
+        Eq(EdgeMath.PickZone(cols, work, -1, 700), 0, "4 columns: left edge takes the first column");
+        Eq(EdgeMath.PickZone(cols, work, 1, 700), 3, "4 columns: right edge takes the last column");
+
+        // Right edge split in two: the height decides.
+        var stack = new ZoneLayout { Name = "stack" };
+        stack.Zones.Add(new Zone { X = 0, Y = 0, W = 60, H = 100 });
+        stack.Zones.Add(new Zone { X = 60, Y = 0, W = 40, H = 50 });
+        stack.Zones.Add(new Zone { X = 60, Y = 50, W = 40, H = 50 });
+        Eq(EdgeMath.PickZone(stack, work, 1, 200), 1, "right edge, upper half: top-right zone");
+        Eq(EdgeMath.PickZone(stack, work, 1, 1200), 2, "right edge, lower half: bottom-right zone");
+        Eq(EdgeMath.PickZone(stack, work, -1, 1200), 0, "left edge: the full-height left zone");
+
+        // A floating zone away from both edges is still the nearest choice.
+        var floating = new ZoneLayout { Name = "float" };
+        floating.Zones.Add(new Zone { X = 35, Y = 20, W = 30, H = 60 });
+        Eq(EdgeMath.PickZone(floating, work, -1, 700), 0, "floating zone: nearest zone is used");
+        Eq(EdgeMath.PickZone(new ZoneLayout(), work, -1, 700), -1, "layout with no zones: nothing to pick");
+
+        // Overlapping layout: a small zone on the edge beats a big one that does not touch it.
+        var over = new ZoneLayout { Name = "over" };
+        over.Zones.Add(new Zone { X = 10, Y = 0, W = 80, H = 100 });
+        over.Zones.Add(new Zone { X = 0, Y = 0, W = 10, H = 100 });
+        Eq(EdgeMath.PickZone(over, work, -1, 700), 1, "zone on the edge beats a bigger zone off the edge");
+    }
+
     /// <summary>Shared-border resize geometry: who joins the dragged line, and where their edge goes.</summary>
     static void Borders()
     {
@@ -78,6 +109,7 @@ public static class SelfTest
             Editor();
             Setups(dir);
             Borders();
+            Edges();
         }
         catch (Exception ex) { _fail++; Console.WriteLine("FAIL  exception: " + ex); }
         finally { try { Directory.Delete(dir, true); } catch { } }
