@@ -5,7 +5,7 @@
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $version = (Get-Content (Join-Path $root 'installer/version.txt') -Raw).Trim()
-$setup = Join-Path $root "dist/RegionControl-Setup-$version.exe"
+$setup = Join-Path $root "dist/SnapLayouts-Setup-$version.exe"
 
 & (Join-Path $PSScriptRoot 'build-installer.ps1')
 if (-not (Test-Path $setup)) { throw "Missing $setup" }
