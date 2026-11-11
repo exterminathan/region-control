@@ -130,6 +130,7 @@ public partial class DragWatcher
             var layout = EdgeMath.CurrentLayout(layouts, mon.Work, _edgeFrames, tol, lastId);
             if (layout == null || layout.Zones.Count == 0) { _edgeSince = DateTime.MaxValue; return false; }
             int pick = EdgeMath.PickZone(layout, mon.Work, side, p.Y, i => EdgeTaken(layout, mon.Work, i));
+            Log($"edge check: {_edgeFrames.Count} other window(s) at {string.Join(" ", _edgeFrames)}; layout in use \"{layout.Name}\"; free zone {(pick < 0 ? "none" : (pick + 1).ToString())}");
             if (pick < 0) { Log($"edge drop skipped: every zone of \"{layout.Name}\" already has a window"); _edgeSince = DateTime.MaxValue; return false; }
 
             _edgeLayout = layout;
