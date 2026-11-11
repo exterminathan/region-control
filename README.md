@@ -6,7 +6,7 @@
 
 Custom snap layouts for Windows 11. Drag a window to the top edge of the screen and pick from your own layouts, not just even splits. Draw the layouts yourself.
 
-> **Pre-release (v0.1.2).** Snap Layouts works on the author's PC, but it has had little testing elsewhere. The installer is not code-signed, so Windows SmartScreen will warn you. See [Known limits](#known-limits).
+> **Pre-release (v0.1.3).** Snap Layouts works on the author's PC, but it has had little testing elsewhere. The installer is not code-signed, so Windows SmartScreen will warn you. See [Known limits](#known-limits).
 
 ## Features
 
@@ -26,19 +26,19 @@ Custom snap layouts for Windows 11. Drag a window to the top edge of the screen 
 
 Requires Windows 11 (64-bit). You do not need to install .NET.
 
-1. Download **SnapLayouts-Setup-0.1.2.exe** from the [latest release](../../releases/latest).
+1. Download **SnapLayouts-Setup-0.1.3.exe** from the [latest release](../../releases/latest).
 2. Run it. If Windows SmartScreen says "Windows protected your PC", choose **More info**, then **Run anyway**. The installer is unsigned for now.
 3. On the tasks page, choose how to deal with Windows' own snapping (see below).
 4. Finish the wizard. Snap Layouts starts in the system tray. If you do not see its icon, click the **^** arrow next to the clock.
 
 The installer installs for the current user by default. You can also install for all users. It upgrades an older version in place and keeps your layouts.
 
-**Portable:** download **SnapLayouts-Portable-0.1.2.exe** and run it from any folder. It is the same program in one file.
+**Portable:** download **SnapLayouts-Portable-0.1.3.exe** and run it from any folder. It is the same program in one file.
 
 To check a download, compare it with `SHA256SUMS.txt` from the release page:
 
 ```powershell
-Get-FileHash .\SnapLayouts-Setup-0.1.2.exe -Algorithm SHA256
+Get-FileHash .\SnapLayouts-Setup-0.1.3.exe -Algorithm SHA256
 ```
 
 ### Turn off Windows' own drag snapping
