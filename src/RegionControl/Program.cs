@@ -33,7 +33,7 @@ public partial class DragWatcher : ApplicationContext
         _hook = Native.SetWinEventHook(Native.EVENT_SYSTEM_MOVESIZESTART, Native.EVENT_SYSTEM_MOVESIZEEND,
             IntPtr.Zero, _proc, 0, 0, Native.WINEVENT_OUTOFCONTEXT | Native.WINEVENT_SKIPOWNPROCESS);
         if (_hook == IntPtr.Zero) throw new InvalidOperationException("SetWinEventHook failed");
-        _poll.Tick += (_, _) => Track();
+        _poll.Tick += (_, _) => { if (_rs != null) BorderStep(); else Track(); };
         // Create handles now, on this thread, so the first show is fast.
         _ = _strip.Handle; _ = _zones.Handle;
 
@@ -105,7 +105,14 @@ public partial class DragWatcher : ApplicationContext
         if (Native.SendMessageTimeout(hwnd, Native.WM_NCHITTEST, IntPtr.Zero, lp, Native.SMTO_ABORTIFHUNG, 100, out var res) != IntPtr.Zero)
             ht = (int)res;
         string who = $"{Native.ProcessName(hwnd)} \"{Native.Title(hwnd)}\"";
-        if (ht >= 10 && ht <= 17) { _saved.Remove(hwnd); Log($"resize start (hit {ht}), ignored: {who}"); return; }
+        if (ht >= 10 && ht <= 17)
+        {
+            // A border shared with snapped windows moves them too. Otherwise it is an ordinary resize.
+            if (TryBeginBorderResize(hwnd, ht, p)) { _drag = IntPtr.Zero; _poll.Start(); return; }
+            _saved.Remove(hwnd);
+            Log($"resize start (hit {ht}), no snapped neighbour: {who}");
+            return;
+        }
         EndAssist("a new drag started");
         _origin = CaptureOrigin(hwnd);
         RestoreOnDragOut(hwnd);
@@ -192,6 +199,7 @@ public partial class DragWatcher : ApplicationContext
 
     void OnEnd()
     {
+        if (_rs != null) { EndBorderResize(); return; }
         if (_drag == IntPtr.Zero) return;
         if (!_cancelled) Track();
         var hwnd = _drag;

@@ -20,6 +20,47 @@ public static class SelfTest
     static bool Same(RECT a, RECT b) => a.Left == b.Left && a.Top == b.Top && a.Right == b.Right && a.Bottom == b.Bottom;
     static void Rect(RECT actual, RECT expected, string what) => Check(Same(actual, expected), $"{what}: expected {expected}, got {actual}");
 
+    /// <summary>Shared-border resize geometry: who joins the dragged line, and where their edge goes.</summary>
+    static void Borders()
+    {
+        // Left stack (top, bottom) and one right window: x line at 1000.
+        var leftTop = new RECT(0, 0, 1000, 500);
+        var leftBottom = new RECT(0, 500, 1000, 1000);
+        var right = new RECT(1000, 0, 2000, 1000);
+        var far = new RECT(3000, 0, 4000, 1000);
+        var others = new List<RECT> { leftBottom, right, far };
+
+        // Drag leftTop's right edge: the other left window and the right window both sit on the line.
+        var m = BorderMath.Members(true, 1000, leftTop, others, 14, 20);
+        Eq(string.Join(",", m), "0,1", "right edge drag: stacked neighbour and right window join, far window does not");
+
+        // A window beside the line but with no vertical overlap does not join.
+        var below = new RECT(1000, 1100, 2000, 1500);
+        Eq(BorderMath.Members(true, 1000, leftTop, new List<RECT> { below }, 14, 20).Count, 0, "no overlap along the line: not a member");
+
+        // A window that connects only through another member joins (chain along the line).
+        var chain = new RECT(1000, 960, 2000, 1500);
+        Eq(BorderMath.Members(true, 1000, leftTop, new List<RECT> { right, chain }, 14, 20).Count, 2, "chain along the line joins");
+
+        // A small gap (up to the tolerance) still counts as the same border and is kept.
+        var gapRight = new RECT(1008, 0, 2000, 1000);
+        Eq(BorderMath.Members(true, 1000, leftTop, new List<RECT> { gapRight }, 14, 20).Count, 1, "8 px gap is within the tolerance");
+        Rect(BorderMath.Move(gapRight, true, 1000, 100, 160, 14), new RECT(1108, 0, 2000, 1000), "moving the line keeps the 8 px gap");
+
+        // Move: left edge of the right window and right edge of the left window follow the line.
+        Rect(BorderMath.Move(right, true, 1000, -200, 160, 14), new RECT(800, 0, 2000, 1000), "line 200 px left: right window grows left");
+        Rect(BorderMath.Move(leftBottom, true, 1000, -200, 160, 14), new RECT(0, 500, 800, 1000), "line 200 px left: left window shrinks");
+        Rect(BorderMath.Move(right, true, 1000, 900, 160, 14), new RECT(1840, 0, 2000, 1000), "minimum width stops the squeezed window");
+        Rect(BorderMath.Move(far, true, 1000, 50, 160, 14), far, "a window off the line does not move");
+
+        // Horizontal line: top window stack above a bottom window.
+        var top = new RECT(0, 0, 1000, 600);
+        var bottom = new RECT(0, 600, 1000, 1000);
+        Eq(BorderMath.Members(false, 600, top, new List<RECT> { bottom }, 14, 20).Count, 1, "bottom edge drag: window below joins");
+        Rect(BorderMath.Move(bottom, false, 600, 100, 160, 14), new RECT(0, 700, 1000, 1000), "line 100 px down: lower window shrinks");
+        Rect(BorderMath.Move(bottom, false, 600, 500, 160, 14), new RECT(0, 840, 1000, 1000), "minimum height stops the squeezed window");
+    }
+
     static MonitorInfo Mon(string id, int left, int w, int h, double scale = 1, bool isInternal = false, int taskbar = 48) => new()
     {
         Id = id, Friendly = isInternal ? "" : id, Internal = isInternal, Scale = scale,
@@ -36,6 +77,7 @@ public static class SelfTest
             ZoneModes();
             Editor();
             Setups(dir);
+            Borders();
         }
         catch (Exception ex) { _fail++; Console.WriteLine("FAIL  exception: " + ex); }
         finally { try { Directory.Delete(dir, true); } catch { } }
